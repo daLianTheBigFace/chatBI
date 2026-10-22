@@ -37,6 +37,22 @@ def test_explicit_environment_overrides_dotenv(tmp_path):
     assert config.model == "override-model"
 
 
+@pytest.mark.parametrize("effort", ["none", "low", "high", ""])
+def test_reasoning_effort_is_loaded_without_model_name_detection(tmp_path, effort):
+    (tmp_path / ".env").write_text(EXAMPLE_ENV + f"OPENAI_REASONING_EFFORT={effort}\n")
+    config = load_model_config(tmp_path, environment={})
+    assert config.reasoning_effort == (effort or None)
+    override = load_model_config(tmp_path, environment={"OPENAI_REASONING_EFFORT": "none"})
+    assert override.reasoning_effort == "none"
+
+
+def test_invalid_reasoning_setting_is_sanitized(tmp_path):
+    (tmp_path / ".env").write_text(EXAMPLE_ENV + "OPENAI_REASONING_EFFORT=disabled\n")
+    with pytest.raises(SQLAgentError) as error:
+        load_model_config(tmp_path, environment={})
+    assert error.value.code == ErrorCode.CONFIGURATION
+
+
 @pytest.mark.parametrize(
     "contents",
     [

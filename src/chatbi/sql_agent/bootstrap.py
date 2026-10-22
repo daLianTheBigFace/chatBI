@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 
 from chatbi.settings import ModelConfig, load_model_config
@@ -12,9 +13,16 @@ from chatbi.sql_agent.agents.stages import (
     SQLGenerationStage,
     SQLRepairStage,
 )
-from chatbi.sql_agent.config import AccessConfig, DatabaseConfig, ExecutionConfig, WorkflowConfig
+from chatbi.sql_agent.config import (
+    CHINOOK_PUBLIC_CATALOG_TABLES,
+    AccessConfig,
+    DatabaseConfig,
+    ExecutionConfig,
+    WorkflowConfig,
+)
 from chatbi.sql_agent.database import DatabaseService, SQLiteAdapter
 from chatbi.sql_agent.database.validator import default_validation_policy
+from chatbi.sql_agent.redaction import PublicCatalogDisplayRedaction
 from chatbi.sql_agent.repair import BudgetedSQLRepairPolicy
 from chatbi.sql_agent.service import SQLAgentService
 from chatbi.sql_agent.summary import ModelAnswerSynthesisStrategy
@@ -48,5 +56,10 @@ async def open_sql_agent(
                 config=workflow_config,
             )
             yield SQLAgentService(
-                workflow, workflow_config, synthesis=ModelAnswerSynthesisStrategy(runner)
+                workflow,
+                workflow_config,
+                synthesis=ModelAnswerSynthesisStrategy(runner),
+                display_factory=partial(
+                    PublicCatalogDisplayRedaction, CHINOOK_PUBLIC_CATALOG_TABLES
+                ),
             )

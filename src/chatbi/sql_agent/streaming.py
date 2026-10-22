@@ -61,7 +61,7 @@ class EventChannel:
         self.block_id = uuid4()
         self.sequence = 0
         self.answer_started = False
-        self._line_buffer = ""
+        self._answer_buffer = ""
         self._pending_sql: dict[UUID, str] = {}
 
     async def emit(self, payload: EventPayload) -> None:
@@ -110,22 +110,19 @@ class EventChannel:
         )
 
     async def answer_delta(self, delta: str) -> None:
-        # Scrub complete lines so secrets split across model deltas cannot bypass matching.
-        self._line_buffer += delta
-        while "\n" in self._line_buffer:
-            line, self._line_buffer = self._line_buffer.split("\n", maxsplit=1)
-            await self.emit(
-                AnswerDelta(block_id=self.block_id, delta=self.display.text(line + "\n"))
-            )
+        self._answer_buffer += delta
+        safe, self._answer_buffer = self.display.stream_prefix(self._answer_buffer)
+        if safe:
+            await self.emit(AnswerDelta(block_id=self.block_id, delta=safe))
 
     async def finish_answer(self, text: str) -> None:
         await self.start_answer()
         # Flush only after synthesis succeeded; the final event is authoritative on fallback.
-        if self._line_buffer and text.endswith(self._line_buffer):
+        if self._answer_buffer and text.endswith(self._answer_buffer):
             await self.emit(
-                AnswerDelta(block_id=self.block_id, delta=self.display.text(self._line_buffer))
+                AnswerDelta(block_id=self.block_id, delta=self.display.text(self._answer_buffer))
             )
-        self._line_buffer = ""
+        self._answer_buffer = ""
         await self.emit(AnswerCompleted(block_id=self.block_id, text=self.display.text(text)))
 
     async def fail_pending_sql(self, code: str) -> None:
@@ -146,7 +143,7 @@ async def stream_response(
         await channel.emit(RunStarted(user_message_id=request.user_message_id))
         try:
             response = await service._ask(
-                SQLAgentRequest(question=request.question),
+                SQLAgentRequest(question=request.question, history=request.history),
                 request_id=str(channel.run_id),
                 observer=channel,
                 display=channel.display,

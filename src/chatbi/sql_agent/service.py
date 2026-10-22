@@ -90,7 +90,7 @@ class SQLAgentService:
                         else response.result.model_copy(deep=True)
                     )
                     summary_question = (
-                        display.text(request.question) if display else request.question
+                        display.text(state.model_question) if display else state.model_question
                     )
                     response.answer = basic_answer(summary_result)
                     await state.progress(WorkflowStage.SYNTHESIS)

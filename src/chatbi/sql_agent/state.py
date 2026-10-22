@@ -1,5 +1,6 @@
 """Per-request state; never retained on shared service instances or logged by default."""
 
+import json
 from dataclasses import dataclass, field
 from datetime import date
 from time import perf_counter
@@ -41,6 +42,18 @@ class SQLAgentState:
     attempts: list[QueryAttempt] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)
     observer: WorkflowObserver | None = None
+
+    @property
+    def model_question(self) -> str:
+        if not self.request.history:
+            return self.request.question
+        return json.dumps(
+            {
+                "conversation_history": [item.model_dump() for item in self.request.history],
+                "current_question": self.request.question,
+            },
+            ensure_ascii=False,
+        )
 
     async def progress(self, stage: WorkflowStage) -> None:
         self.stage = stage

@@ -384,3 +384,107 @@ README 补充流式入口。当前没有实现实际聊天前端。
 Ruff、格式、uv 锁文件检查通过；历史 Windows pytest 临时目录清理警告仍存在。
 真实模型 SSE 端到端验证返回 artists=275，有 answer.delta、answer.completed 与唯一 run.completed，
 status=success，执行 1 次、修复 0 次，无汇总降级。
+
+## Streamlit SSE 测试前端
+
+日期：2026-10-23。
+
+新增 src/chatbi/frontend/app.py 和 client.py，使用 Streamlit 与 HTTPX。
+页面调用已有 FastAPI SSE 接口，不直接连接数据库或加载模型密钥。
+侧边栏配置后端地址与事件调试；聊天区显示当前提问、阶段进度、SQL 校验与执行状态、
+独立结果表、回答增量/最终替换、告警、澄清问题及执行元数据。
+表头加位置前缀，避免重复列名丢失；原始事件调试仅保留本次最近 200 个事件。
+
+客户端使用 HTTPX iter_lines 处理 UTF-8 与任意网络分块，通过 Pydantic 验证事件内容，
+检查 sequence、run/message 身份及 SSE event/id。只有 run.completed 表示正常结束，
+提前 EOF、HTTP 错误、错误媒体类型及连接超时均显示公开错误。
+流读取使用上下文管理器关闭连接，不输出后端错误响应原文。
+
+本次不开发历史记录、session、多轮上下文和会话持久化。
+每次提交都是新请求，页面刷新、控件变更或下一次提交会重建当前展示。
+没有自定义停止按钮；未来可按需要增加独立取消交互。
+README 已补充 FastAPI 和 Streamlit 双进程启动方式。
+.streamlit/secrets.toml 加入忽略规则，避免未来本地凭据被提交。
+
+新增 14 项离线测试，包括 SSE 解析、无效事件、连接错误与 Streamlit AppTest 渲染。
+全量 184 项测试通过；Ruff、格式与 uv 锁文件检查通过。
+真实端到端验证运行独立 FastAPI 服务，通过 Streamlit AppTest 的实际 HTTP 客户端消费
+模型 SSE，页面显示 1 张 SQL 卡片、1 张结果表和包含 275 的最终回答，状态“查询完成”。
+另验证 Streamlit HTTP 服务健康检查通过。临时验证进程均已关闭。
+pytest 历史 Windows 临时目录清理警告仍存在，不影响断言。
+
+## 当前对话上下文与 SSE 类型说明修正
+
+日期：2026-10-23。按用户澄清，“不开发历史 session”不表示单轮无上下文。
+Streamlit 改为使用页面 session_state 在内存保存最近 10 轮问答、已完成事件和 conversation_id。
+控件引起的重跑仅重绘历史卡片，不重新调用模型或执行 SQL；新对话按钮清空状态。
+失败或未完成轮次不进入模型上下文；澄清问题可进入上下文，方便下一轮直接补充条件。
+暂不写入数据库，不实现会话列表、持久历史或断线恢复。
+
+请求增加 HistoryMessage(role, content) 与 history。只允许 user/assistant，
+最多 20 条、每条 16000 字符、总计 48000 字符；前端按完整问答对截取最近的预算内历史。
+后端将历史与当前问题作为分离的结构化数据传入理解、生成、修复与汇总阶段。
+Prompt 明确历史是参考数据，不是系统指令或可信统计结果；新查询仍完整校验并只读执行。
+后端不依据 conversation_id 自动加载数据，前端负责携带历史，避免全局共享状态串话。
+
+请求 Content-Type 为 application/json，成功响应为 text/event-stream。
+ChatStreamingResponse 增加明确的 class media_type，OpenAPI 的成功响应只声明 text/event-stream。
+Streamlit 在 Python 服务端消费 SSE，浏览器侧连接为 Streamlit WebSocket，
+因此浏览器 Network 不一定出现对 FastAPI 的 SSE 请求。
+调试模式显示实际响应 Content-Type 与访问地址；HTTP 422 参数错误仍返回 JSON。
+
+新增请求 Schema 快照 chat-stream-request.schema.json，README 和协议同步更新。
+全量 193 项测试通过，覆盖跨轮保留/重绘/清空、历史消息预算与角色限制、
+澄清上下文、历史穿透理解/生成/修复和 SSE 路径、请求与响应类型区分。
+真实 FastAPI + Streamlit 两轮调用验证通过：艺术家总数 275、专辑总数 347，
+同一 conversation_id 保留两轮展示，实际响应为 text/event-stream; charset=utf-8，
+OpenAPI 成功响应类型仅为 text/event-stream。验证用后端进程已关闭。
+
+## 随机歌曲查询修复与 DeepSeek 非思考模式
+
+日期：2026-10-23。
+
+复现“随机介绍五个歌曲”时，观察到一次 SQL 生成超过 45 秒模型期限。
+独立执行 SELECT ... FROM tracks ORDER BY RANDOM() LIMIT 5 时，静态校验通过，
+但 SQLite 函数白名单拒绝 RANDOM，返回不可修复的 ACCESS_DENIED。
+默认许可增加只读 random，仍拒绝 randomblob、扩展和文件函数；用户自定义白名单仍可禁用 random。
+理解/生成提示补充随机目录条目与数据库已有介绍字段的口径，不虚构乐评或背景信息。
+
+查询成功后又确认原始保守脱敏隐藏全部歌名和艺人，使汇总无法介绍歌曲。
+因此 Chinook 组装时显式注入公开目录展示策略，仅全部来源于音乐目录表的查询允许文本展示。
+私人表连接、嵌套子查询与 UNION 恢复保守脱敏；原始数据与数据库访问权限不变。
+数字 LIMIT/OFFSET 仍在展示 SQL 中隐藏，但不作为私有过滤值污染答案计数。
+
+按用户要求查阅 DeepSeek 官方 thinking_mode 与 responses_api 文档，确认当前
+api.deepseek.com / deepseek-v4-pro 的 Responses 请求使用 reasoning.effort=none 关闭思考。
+Chat Completions 的 thinking.type=disabled 是另一种格式，不能混用。
+ModelConfig 增加可选 reasoning_effort，集中从 OPENAI_REASONING_EFFORT 加载，
+通过 Agents SDK ModelSettings 同时注入结构化与流式调用；不根据模型名隐式猜测参数。
+留空保留服务默认行为，非法值返回配置错误。当前本地 .env 已设置为 none，其他配置未改。
+
+全量 213 项离线测试通过，新增随机采样/自定义禁用、公开目录/私有来源脱敏、
+LIMIT 展示、思考配置加载、优先级和 SDK 参数传递覆盖。
+真实重测“随机介绍五个歌曲”返回 success、5 行和 455 字符回答，三次模型调用均为 none，
+两次结构化调用 reasoning_tokens=0，总耗时约 6.9 秒；这是单次样例而非性能基准。
+模型配置在启动时加载，现有运行中的 FastAPI 需重启后生效。
+
+官方参考：
+- https://api-docs.deepseek.com/guides/thinking_mode
+- https://api-docs.deepseek.com/guides/responses_api
+
+## 正文流式展示延迟修复
+
+日期：2026-10-23。
+
+确认 SDK 原生流式、HTTP SSE 消费和前端逐事件刷新均已工作，延迟来自后端
+EventChannel 的整行脱敏缓冲：无换行正文直到汇总结束才发送，造成整段突然出现。
+展示策略新增 stream_prefix，增量释放安全前缀，仅保留未完整的词、敏感模式及已知私有值前缀，
+切分点不穿过完整敏感匹配；不再依赖换行。Unicode 邮箱规则意味着连续中文词句可能
+等到标点后释放，英文通常按词展示；不承诺逐字展示，也没有模拟打字延迟。
+保留 answer.completed 的最终替换语义与失败降级。前端调试补充正文分片数、后端首段正文时间。
+
+新增无换行提前送达、逐字符/任意切分脱敏、已知多词私有值前缀保护，以及前端
+收到最终事件前已更新临时正文的回归测试。全量 231 项离线测试通过。
+真实 HTTP + DeepSeek 重测“随机介绍五个歌曲”：text/event-stream 响应，success，
+首段正文约 6.55 秒到达，正文完成约 8.30 秒，共 134 个 delta，证实正文在完成前分片到达。
+时间包含前置理解、SQL 生成与执行，仅为单次样例；验证用后端进程已关闭。

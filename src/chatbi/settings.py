@@ -3,6 +3,7 @@
 import os
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Literal
 
 from dotenv import dotenv_values
 from pydantic import (
@@ -24,7 +25,8 @@ ENV_FILE_NAME = ".env"
 ENV_API_KEY = "OPENAI_API_KEY"
 ENV_BASE_URL = "OPENAI_BASE_URL"
 ENV_MODEL = "OPENAI_MODEL"
-MODEL_ENV_KEYS = (ENV_API_KEY, ENV_BASE_URL, ENV_MODEL)
+ENV_REASONING_EFFORT = "OPENAI_REASONING_EFFORT"
+MODEL_ENV_KEYS = (ENV_API_KEY, ENV_BASE_URL, ENV_MODEL, ENV_REASONING_EFFORT)
 DEFAULT_MODEL_TIMEOUT_SECONDS = 45.0
 DEFAULT_MODEL_MAX_TURNS = 1
 DEFAULT_MODEL_MAX_RETRIES = 0
@@ -40,6 +42,9 @@ class ModelConfig(BaseModel):
     timeout_seconds: PositiveFloat = DEFAULT_MODEL_TIMEOUT_SECONDS
     max_turns: PositiveInt = DEFAULT_MODEL_MAX_TURNS
     max_retries: int = Field(default=DEFAULT_MODEL_MAX_RETRIES, ge=0)
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = (
+        None
+    )
 
     @field_validator("api_key", mode="before")
     @classmethod
@@ -74,6 +79,7 @@ def load_model_config(
             api_key=selected[ENV_API_KEY],
             base_url=selected[ENV_BASE_URL],
             model=selected[ENV_MODEL],
+            reasoning_effort=selected[ENV_REASONING_EFFORT] or None,
         )
     except (ValidationError, OSError):
         raise SQLAgentError(ErrorCode.CONFIGURATION, INVALID_MODEL_CONFIG) from None

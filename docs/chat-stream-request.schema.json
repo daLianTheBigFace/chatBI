@@ -1,0 +1,73 @@
+{
+  "$defs": {
+    "HistoryMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": [
+            "user",
+            "assistant"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "content": {
+          "$ref": "#/$defs/chatbi__sql_agent__models__NonEmptyText__1"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "title": "HistoryMessage",
+      "type": "object"
+    },
+    "chatbi__sql_agent__models__NonEmptyText__1": {
+      "maxLength": 16000,
+      "minLength": 1,
+      "type": "string"
+    },
+    "chatbi__sql_agent__models__NonEmptyText__2": {
+      "maxLength": 8000,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "history": {
+      "items": {
+        "$ref": "#/$defs/HistoryMessage"
+      },
+      "maxItems": 20,
+      "title": "History",
+      "type": "array"
+    },
+    "question": {
+      "$ref": "#/$defs/chatbi__sql_agent__models__NonEmptyText__2"
+    },
+    "conversation_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Conversation Id"
+    },
+    "user_message_id": {
+      "format": "uuid",
+      "title": "User Message Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "question"
+  ],
+  "title": "ChatRequest",
+  "type": "object"
+}

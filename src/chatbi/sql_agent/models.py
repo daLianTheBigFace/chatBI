@@ -1,6 +1,6 @@
 """Validated data exchanged across the service, strategies and database layer."""
 
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -14,7 +14,27 @@ class Contract(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class SQLAgentRequest(Contract):
+MAX_HISTORY_MESSAGES = 20
+MAX_HISTORY_MESSAGE_CHARACTERS = 16_000
+MAX_HISTORY_CHARACTERS = 48_000
+
+
+class HistoryMessage(Contract):
+    role: Literal["user", "assistant"]
+    content: NonEmptyText = Field(max_length=MAX_HISTORY_MESSAGE_CHARACTERS)
+
+
+class ConversationContext(Contract):
+    history: list[HistoryMessage] = Field(default_factory=list, max_length=MAX_HISTORY_MESSAGES)
+
+    @model_validator(mode="after")
+    def check_history(self) -> Self:
+        if sum(len(item.content) for item in self.history) > MAX_HISTORY_CHARACTERS:
+            raise ValueError("Conversation history exceeds the character budget")
+        return self
+
+
+class SQLAgentRequest(ConversationContext):
     question: NonEmptyText
     session_id: str | None = None
 

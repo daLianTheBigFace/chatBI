@@ -25,6 +25,8 @@ async def event_frames(events: AsyncIterator[ChatEvent | None]) -> AsyncIterator
 
 
 class ChatStreamingResponse(StreamingResponse):
+    media_type = SSE_MEDIA_TYPE
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         try:
             await super().__call__(scope, receive, send)

@@ -314,3 +314,23 @@ def test_runtime_releases_client_and_refuses_calls_after_close():
         assert error.value.code == ErrorCode.CONFIGURATION
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("effort", [None, "none", "low"])
+def test_reasoning_effort_reaches_structured_agent(monkeypatch, effort):
+    captured = []
+
+    async def fake_run(agent, **kwargs):
+        captured.append(agent.model_settings.reasoning)
+        return SimpleNamespace(final_output=understood())
+
+    monkeypatch.setattr("chatbi.sql_agent.agents.runtime.Runner.run", fake_run)
+
+    async def scenario():
+        async with AgentsSDKRunner(model_config(reasoning_effort=effort)) as runner:
+            await runner.run(
+                name="test", instructions="test", user_input="test", output_type=ParsedQuery
+            )
+
+    asyncio.run(scenario())
+    assert (captured[0].effort if captured[0] is not None else None) == effort

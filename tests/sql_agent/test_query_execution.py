@@ -126,6 +126,26 @@ def test_function_allowlist_rejects_unapproved_functions(query_database, sql):
         assert error.value.code in {ErrorCode.ACCESS_DENIED, ErrorCode.EXECUTION}
 
 
+def test_random_sampling_is_allowed_without_enabling_randomblob(query_database):
+    with make_service(query_database) as service:
+        result = run_query(
+            service, "SELECT id, label FROM numbers ORDER BY RANDOM() LIMIT :n", {"n": 2}
+        )
+        assert len(result.rows) == 2
+        assert len({row[0] for row in result.rows}) == 2
+        assert all(row[0] in {1, 2, 3} for row in result.rows)
+        with pytest.raises(SQLAgentError):
+            run_query(service, "SELECT randomblob(100000000)")
+
+
+def test_random_can_still_be_disabled_by_custom_access_policy(query_database):
+    access = AccessConfig(allowed_functions=frozenset({"count"}))
+    with make_service(query_database, access=access) as service:
+        with pytest.raises(SQLAgentError) as error:
+            run_query(service, "SELECT id FROM numbers ORDER BY RANDOM() LIMIT 2")
+        assert error.value.code == ErrorCode.ACCESS_DENIED
+
+
 def test_bound_value_cannot_change_sql(query_database):
     with make_service(query_database) as service:
         result = run_query(

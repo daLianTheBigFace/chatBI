@@ -5,9 +5,10 @@ from collections.abc import AsyncIterator
 from contextlib import aclosing
 from typing import Self
 
-from agents import Agent, OpenAIResponsesModel, RunConfig, Runner
+from agents import Agent, ModelSettings, OpenAIResponsesModel, RunConfig, Runner
 from agents.exceptions import AgentsException, ModelBehaviorError
 from openai import AsyncOpenAI, OpenAIError
+from openai.types.shared import Reasoning
 from pydantic import BaseModel, ValidationError
 
 from chatbi.settings import ModelConfig
@@ -33,6 +34,9 @@ class AgentsSDKRunner:
             max_retries=config.max_retries,
         )
         self._model = OpenAIResponsesModel(model=config.model, openai_client=self._client)
+        self._model_settings = ModelSettings(
+            reasoning=Reasoning(effort=config.reasoning_effort) if config.reasoning_effort else None
+        )
 
     async def run[T: BaseModel](
         self, *, name: str, instructions: str, user_input: str, output_type: type[T]
@@ -40,7 +44,11 @@ class AgentsSDKRunner:
         if self._closed:
             raise SQLAgentError(ErrorCode.CONFIGURATION, RUNTIME_CLOSED)
         agent = Agent(
-            name=name, instructions=instructions, model=self._model, output_type=output_type
+            name=name,
+            instructions=instructions,
+            model=self._model,
+            output_type=output_type,
+            model_settings=self._model_settings,
         )
         try:
             async with asyncio.timeout(self._config.timeout_seconds):
@@ -70,7 +78,12 @@ class AgentsSDKRunner:
     ) -> AsyncIterator[str]:
         if self._closed:
             raise SQLAgentError(ErrorCode.CONFIGURATION, RUNTIME_CLOSED)
-        agent = Agent(name=name, instructions=instructions, model=self._model)
+        agent = Agent(
+            name=name,
+            instructions=instructions,
+            model=self._model,
+            model_settings=self._model_settings,
+        )
         try:
             async with asyncio.timeout(self._config.timeout_seconds):
                 result = Runner.run_streamed(

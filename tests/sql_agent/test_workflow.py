@@ -21,7 +21,7 @@ from chatbi.sql_agent.database import DatabaseService, SQLiteAdapter
 from chatbi.sql_agent.database.validator import default_validation_policy
 from chatbi.sql_agent.enums import ErrorCode, ResponseStatus, UnderstandingStatus
 from chatbi.sql_agent.errors import SQLAgentError
-from chatbi.sql_agent.models import SQLAgentRequest
+from chatbi.sql_agent.models import HistoryMessage, SQLAgentRequest
 from chatbi.sql_agent.prompts import (
     GENERATION_AGENT_NAME,
     REPAIR_AGENT_NAME,
@@ -118,6 +118,24 @@ def build_service(database, runner, *, config=None, repair_policy=None):
 
 def ask(service, question="统计 numbers 表的记录数"):
     return asyncio.run(service.ask(SQLAgentRequest(question=question)))
+
+
+def test_history_reaches_understanding_generation_and_repair(database):
+    runner = ScriptedRunner([parsed_query(), candidate(INVALID_COLUMN_SQL), candidate(COUNT_SQL)])
+    service, workflow = build_service(database, runner)
+    request = SQLAgentRequest(
+        question="那总数呢？",
+        history=[HistoryMessage(role="user", content="看一下 numbers 表")],
+    )
+    response = asyncio.run(service.ask(request))
+    assert response.status == ResponseStatus.SUCCESS
+    for call in runner.calls:
+        question = json.loads(json.loads(call["user_input"])["question"])
+        assert question["current_question"] == request.question
+        assert question["conversation_history"] == [
+            {"role": "user", "content": "看一下 numbers 表"}
+        ]
+    assert workflow.states[0].request.history == request.history
 
 
 def test_success_returns_exact_executed_query_result_and_metadata(database):

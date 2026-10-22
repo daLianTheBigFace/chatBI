@@ -8,12 +8,19 @@ from uuid import UUID, uuid4
 from pydantic import Field
 
 from chatbi.sql_agent.enums import ResponseStatus, WorkflowStage
-from chatbi.sql_agent.models import Contract, NonEmptyText, QueryResult, RunMetadata, SQLQuery
+from chatbi.sql_agent.models import (
+    Contract,
+    ConversationContext,
+    NonEmptyText,
+    QueryResult,
+    RunMetadata,
+    SQLQuery,
+)
 
 PROTOCOL_VERSION = "1.0"
 
 
-class ChatRequest(Contract):
+class ChatRequest(ConversationContext):
     question: NonEmptyText = Field(max_length=8000)
     conversation_id: UUID | None = None
     user_message_id: UUID = Field(default_factory=uuid4)

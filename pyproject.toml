@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "anyio>=4,<5",
     "fastapi>=0.115,<1",
+    "httpx>=0.28,<1",
     "openai>=3.0,<4",
     "openai-agents>=0.24.0",
     "openpyxl>=3.1.5",
@@ -18,6 +19,7 @@ dependencies = [
     "python-dotenv>=1.2.4",
     "sqlalchemy>=2.0,<3",
     "sqlglot>=28,<31",
+    "streamlit>=1.45,<2",
     "uvicorn>=0.30,<1",
 ]
 

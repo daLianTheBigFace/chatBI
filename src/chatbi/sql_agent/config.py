@@ -14,9 +14,13 @@ DEFAULT_MAX_REPAIRS = 2
 DEFAULT_MAX_EXECUTIONS = 3
 DEFAULT_MAX_SQL_CHARACTERS = 50_000
 DEFAULT_PROGRESS_INTERVAL = 1000
+CHINOOK_PUBLIC_CATALOG_TABLES = frozenset(
+    {"tracks", "albums", "artists", "genres", "media_types", "playlists", "playlist_track"}
+)
 DEFAULT_ALLOWED_FUNCTIONS = frozenset(
     {
         "count",
+        "random",
         "sum",
         "avg",
         "min",

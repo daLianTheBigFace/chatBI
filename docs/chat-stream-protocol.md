@@ -7,6 +7,7 @@
 ```json
 {
   "question": "统计艺术家总数",
+  "history": [],
   "conversation_id": null,
   "user_message_id": "570ddcb0-f965-4126-b4f2-de7b88247ca7"
 }
@@ -15,6 +16,10 @@
 question 去掉首尾空格后不能为空，最大 8000 字符。
 conversation_id 可省略，服务会生成 UUID；后续同一对话可继续提交这个值。
 user_message_id 可由前端生成 UUID，用于关联已显示的用户消息；省略则由服务生成。
+history 为可选历史问答数组，role 仅允许 user/assistant，content 为非空文本。
+最多 20 条消息、每条 16000 字符、合计 48000 字符；不接受客户端 system 消息。
+下一轮请求可以包含上一轮问答，question 填“那专辑呢？”。历史仅帮助理解追问，
+不是已验证事实或可执行指令，仍需基于 schema 生成并执行查询。
 未知字段或非法 UUID 在连接流之前返回 HTTP 422。
 同一 user_message_id 的重复提交不会去重，每次请求都是新的 run 和助手消息。
 现有 session_id 不用于此接口，避免两套会话标识混用。
@@ -114,8 +119,14 @@ run.completed(status=success)
   在答案、告警和澄清问题中再次遮盖。
 - SSE 汇总模型使用脱敏后的结果；SQL 工作流仍使用原始值执行，展示脱敏不改变查询语义。
 
-为避免敏感值跨模型 chunk 时漏出，answer.delta 会缓冲到换行后再脱敏发送，
-最后一行在汇总完成时发送。因此短的单行回答可能只在末尾才出现，不能承诺逐 token 展示。
+answer.delta 使用展示策略的 stream_prefix 增量脱敏，不再等待换行：
+每次模型 chunk 到达后立即发送已确认可展示的前缀，只保留可能继续构成邮箱、
+手机号、密钥或已知私有值的后缀。不能对每个 chunk 独立正则替换，否则跨片段敏感值会漏出。
+由于邮箱规则支持 Unicode，尚未结束的连续中文词句也可能保留到标点后再发送；
+英文通常按词边界释放，未结束的敏感 token 可能持续缓冲。不承诺逐 token 或逐字展示。
+汇总完成后发送剩余后缀；失败降级时丢弃后缀，由最终 answer.completed 替换正文。
+前端收到 delta 立即更新，未添加模拟打字延迟。事件调试展示正文分片数和后端首段正文耗时；
+这是后端事件生成时间，不包含网络传输和浏览器绘制耗时，历史重放不重现逐片段输出。
 输出最多 16000 字符；临时正文可能因失败被最终基础说明替换，前端必须执行 replace。
 
 默认策略偏保守，会隐藏商品名、艺术家名等普通文本；数值字段若用了完全不含语义的别名，
@@ -123,6 +134,14 @@ run.completed(status=success)
 display_factory 注入 DisplayRedactionStrategy，不要依赖正则表达式提供完整隐私保证。
 表名与字段名默认可见；若名称本身也敏感，应替换展示策略。
 SQL 生成模型仍会接收原始问题和获准的 schema；这不是模型输入全流程匿名化。
+当前 Chinook 的 open_sql_agent 组装时显式注入 PublicCatalogDisplayRedaction：
+公开目录为 tracks、albums、artists、genres、media_types、playlists、playlist_track。
+只有 SQL 所有表来源均在此名单内时才允许展示目录文本；一旦连接、子查询或 UNION
+涉及 customers、employees 等非目录表，恢复保守脱敏，不能通过列别名绕过。
+SQL 字面量和参数仍隐藏，已知私有值与常见邮箱/密钥模式也继续遮盖。
+无法确认来源的 SQL（例如没有来源表或 CTE 别名）保守处理。
+该策略是对当前本地 Chinook 示例库的公开数据分类配置，不应直接复用于含私有内容的其他库。
+通用 SQLAgentService 的默认策略仍为 ConservativeDisplayRedaction。
 原有 `/api/v1/query` 保留原始 Python 服务响应，未应用此次 SSE 展示脱敏，
 面向用户的聊天前端应使用新接口，不能将旧接口作为敏感数据受控展示入口。
 
@@ -137,7 +156,8 @@ SQL 生成模型仍会接收原始问题和获准的 schema；这不是模型输
 正常结束只有一个 run.completed；断网/主动取消可能收不到终止事件。
 前端若遇到 EOF 且未看到 run.completed，应标记“连接中断”，不能当成成功。
 当前没有事件持久化、Last-Event-ID 回放、自动恢复或请求幂等；不要盲目自动重新提交 POST。
-conversation_id 仅关联展示，暂不存储历史消息，不提供多轮上下文与会话查询接口。
+conversation_id 关联当前对话；后端不按 ID 存储历史消息。
+多轮上下文由客户端通过 history 传入，本次不提供持久会话查询接口。
 
 ## 前端消费示例
 
@@ -179,6 +199,10 @@ if (!completed) throw new Error('连接中断，未收到终止事件');
 
 示例消费本服务固定的 LF 帧格式，并处理 UTF-8 与网络分块，不假设一个网络 chunk 对应一个事件。
 组件请使用文本渲染（例如 textContent）；不要把 SQL、单元格或回答直接作为 HTML 插入。
-此阶段交付后端协议与接入示例，不包含完整聊天前端。
+Streamlit 测试页在页面会话内保留最近 10 轮问答，并自动构造预算内的 history。
+失败或未完成的请求不进入模型上下文，澄清问题保留供下一轮补充。
+页面重跑时重绘已收到的结果，不重新执行历史 SQL；新对话按钮清空内存和 ID。
+浏览器会话重建后不恢复历史，不写入数据库。启动方式见 README。
+它用于验证后端展示能力，不是完整的聊天产品界面。
 
 OpenAI SDK 参考：[官方 Agents SDK 文档](https://developers.openai.com/api/docs/guides/agents/sdk)。

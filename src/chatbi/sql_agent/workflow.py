@@ -52,9 +52,7 @@ class SQLAgentWorkflow:
         await state.progress(WorkflowStage.SCHEMA)
         schema = await run_in_worker(self._database.get_schema)
         await state.progress(WorkflowStage.UNDERSTANDING)
-        parsed = await self._understanding.parse(
-            state.request.question, schema, state.reference_date
-        )
+        parsed = await self._understanding.parse(state.model_question, schema, state.reference_date)
         state.parsed_query = parsed
         if parsed.status == UnderstandingStatus.NEEDS_CLARIFICATION:
             return SQLAgentResponse(
@@ -67,7 +65,7 @@ class SQLAgentWorkflow:
         state.selected_schema = selected
         await state.progress(WorkflowStage.GENERATION)
         candidate = await self._generation.generate(
-            state.request.question, parsed, selected, state.reference_date
+            state.model_question, parsed, selected, state.reference_date
         )
         return await self._run_candidates(state, parsed, selected, candidate)
 
@@ -130,7 +128,7 @@ class SQLAgentWorkflow:
             await state.progress(WorkflowStage.REPAIR)
             state.repair_count += 1
             candidate = await self._repair.repair(
-                state.request.question, parsed, schema, query, issue, state.reference_date
+                state.model_question, parsed, schema, query, issue, state.reference_date
             )
 
     def _check_repair_budget(self, state: SQLAgentState, issue: ValidationIssue) -> None:

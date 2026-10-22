@@ -147,6 +147,30 @@ def test_success_order_and_stable_ids(make_service):
         assert event.created_at.utcoffset().total_seconds() == 0
 
 
+def test_sse_history_is_forwarded_to_model_stages(make_service):
+    service = make_service()
+    runner = service._workflow._understanding._runner
+    original_run = runner.run
+    questions = []
+
+    async def record(**kwargs):
+        questions.append(json.loads(kwargs["user_input"])["question"])
+        return await original_run(**kwargs)
+
+    runner.run = record
+    events = asyncio.run(
+        collect(
+            service,
+            ChatRequest(
+                question="那总数呢？",
+                history=[{"role": "user", "content": "查询 people 表"}],
+            ),
+        )
+    )
+    assert events[-1].payload.status == ResponseStatus.SUCCESS
+    assert all("查询 people 表" in question for question in questions)
+
+
 def test_repair_has_separate_sql_cards_and_validation_failure_is_not_execution(make_service):
     events = asyncio.run(
         collect(make_service([parsed(), candidate("SELECT missing FROM people"), candidate()]))
@@ -247,7 +271,7 @@ def test_model_deltas_scrub_across_chunks_and_final_answer_replaces_partial(make
 
     events = asyncio.run(collect(make_service(synthesis=Summary())))
     assert PRIVATE_EMAIL not in "".join(event.model_dump_json() for event in events)
-    assert REDACTED in payloads(events, "answer.delta")[0].delta
+    assert REDACTED in "".join(item.delta for item in payloads(events, "answer.delta"))
     answer = payloads(events, "answer.completed")[0]
     assert answer.replace
     if fail:
@@ -297,7 +321,8 @@ def test_close_stream_cancels_inflight_summary(make_service):
     asyncio.run(asyncio.wait_for(scenario(), timeout=2))
 
 
-def test_delta_arrives_before_model_finishes(make_service):
+@pytest.mark.parametrize("first", ["第一段\n", "第一段，", "第一段。", "First part "])
+def test_delta_arrives_before_model_finishes(make_service, first):
     async def scenario():
         release, waiting = asyncio.Event(), asyncio.Event()
 
@@ -306,7 +331,7 @@ def test_delta_arrives_before_model_finishes(make_service):
                 pytest.fail("Should stream")
 
             async def stream_synthesize(self, question, result):
-                yield "第一段\n"
+                yield first
                 waiting.set()
                 await release.wait()
                 yield "结束"
@@ -316,7 +341,7 @@ def test_delta_arrives_before_model_finishes(make_service):
         ) as stream:
             async for event in stream:
                 if event is not None and event.payload.type == "answer.delta":
-                    assert event.payload.delta == "第一段\n"
+                    assert event.payload.delta == first
                     await waiting.wait()
                     assert not release.is_set()
                     release.set()
@@ -444,12 +469,11 @@ def test_http_sse_schema_and_bad_body_validation(make_service, tmp_path):
             {"question": "统计", "sql": "DELETE FROM people"},
         ]:
             assert client.post("/api/v1/chat/stream", json=body).status_code == 422
-        assert (
-            "text/event-stream"
-            in client.get("/openapi.json").json()["paths"]["/api/v1/chat/stream"]["post"][
-                "responses"
-            ]["200"]["content"]
-        )
+        assert set(
+            client.get("/openapi.json").json()["paths"]["/api/v1/chat/stream"]["post"]["responses"][
+                "200"
+            ]["content"]
+        ) == {"text/event-stream"}
 
 
 def test_invalid_event_payload_rejected():
@@ -535,7 +559,12 @@ def test_sdk_stream_filters_reasoning_and_closes_on_cancel(monkeypatch):
     monkeypatch.setattr("chatbi.sql_agent.agents.runtime.Runner.run_streamed", run_streamed)
 
     async def scenario():
-        config = ModelConfig(api_key="test", base_url="https://example.test/v1", model="test")
+        config = ModelConfig(
+            api_key="test",
+            base_url="https://example.test/v1",
+            model="test",
+            reasoning_effort="none",
+        )
         async with (
             AgentsSDKRunner(config) as runner,
             aclosing(
@@ -548,6 +577,7 @@ def test_sdk_stream_filters_reasoning_and_closes_on_cancel(monkeypatch):
     assert captured["cancelled"] and captured["closed"]
     assert captured["run_config"].tracing_disabled
     assert captured["agent"].tools == [] and captured["agent"].output_type is None
+    assert captured["agent"].model_settings.reasoning.effort == "none"
 
 
 def test_summary_stream_is_native_text_and_handles_scope_suffix():
