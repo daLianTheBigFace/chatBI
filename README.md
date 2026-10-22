@@ -2,16 +2,16 @@
 
 # ChatBI
 
-**用自然语言查询数据，让 SQL 执行过程清晰可见。**
+**以对话连接数据，让分析过程与结论都有依据。**
 
-基于 OpenAI Agents SDK 的只读 SQL Agent，提供 FastAPI 接口与 SSE 聊天事件流。
+以数据分析为核心的本地对话助手，基于 OpenAI Agents SDK 构建，按模块扩展 Agent 能力。
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)
 ![SQLite](https://img.shields.io/badge/Database-SQLite-003B57?logo=sqlite&logoColor=white)
 ![uv](https://img.shields.io/badge/Environment-uv-DE5FE9)
 
-[快速开始](#快速开始) · [API 接口](#api-接口) · [事件协议](docs/chat-stream-protocol.md) · [技术设计](docs/sql-agent-technical-design.md)
+[项目架构](#项目架构) · [快速开始](#快速开始) · [开发路线](#开发路线) · [项目设计](docs/chatbi-project-design.md) · [功能设计](docs/chatbi-functional-design.md)
 
 </div>
 
@@ -19,36 +19,54 @@
 
 ## 项目简介
 
-ChatBI 将自然语言问题转换为只读 SQL，完成校验、执行和结果汇总。
-工作流由 Python 显式编排，通过策略接口替换各阶段实现。
-当前提供后端服务和用于 SSE 联调的简单 Streamlit 聊天页面。
+ChatBI 希望让用户在一个聊天窗口中完成数据查询、连续追问、结果解释与对比分析，
+同时处理普通交流和一般知识问题。涉及数据库的结论以真实查询结果为依据。
+
+**SQL Agent 是其中的数据查询模块**：它将自然语言转换为受控的只读查询，
+也可通过独立的 Python 服务与 HTTP 接口供其他 Agent 或应用复用。
+对话入口、上下文管理、能力编排和前端交互共同构成 ChatBI。
+
+当前已完成 SQL 查询模块、FastAPI 服务和 Streamlit 测试页；
+页面请求仍直接进入 SQL 工作流。上层对话 Agent、普通问答路由与受限多次查询分析
+已完成设计，尚未接入。下面的快速开始用于体验当前已有能力。
+
+## 项目架构
+
+目标架构如下，标注“规划”的部分尚未实现：
+
+```mermaid
+flowchart TD
+    U[用户] --> UI[聊天界面]
+    UI --> API[FastAPI · SSE]
+    API --> CHAT[对话服务与 Agent · 规划]
+    CHAT --> DIRECT[普通问答与结果解释 · 规划]
+    CHAT --> TOOLS[能力工具适配 · 规划]
+    TOOLS --> SQL[SQL Agent · 已实现]
+    TOOLS -.-> MORE[其他 Agent 或工具 · 后续扩展]
+    SQL --> DB[SQLite 只读访问]
+```
+
+| 层次 | 职责 | 当前状态 |
+| :--- | :--- | :--- |
+| 对话与编排 | 理解任务、选择能力、整合证据并生成最终回复 | 已设计，待开发 |
+| 能力模块 | SQL Agent 负责数据库查询，其他能力按需接入 | SQL 模块已实现，工具适配待开发 |
+| 服务与协议 | FastAPI 接口、Pydantic 数据契约、SSE 事件流 | 已实现，后续扩展父子调用关联 |
+| 前端交互 | 聊天消息、阶段进度、SQL 卡片、结果表与正文 | 已有 Streamlit 测试页 |
+| 上下文 | 当前会话问答与近期查询证据 | 已有问答文本历史，结构化结果上下文待开发 |
+
+### 已有能力：SQL Agent
 
 | 能力 | 说明 |
 | :--- | :--- |
-| 自然语言查询 | 理解问题，选择数据表，基于真实 schema 生成 SQL |
+| 自然语言查询 | 理解问题、选择数据表，基于真实 schema 生成 SQL |
 | 受控执行 | SQL AST 校验、SQLite 只读连接、表与字段访问限制 |
 | 有限次修复 | 根据校验或执行反馈调整 SQL，重新校验后执行 |
 | 过程可见 | 展示阶段进度、脱敏 SQL 和每次查询的结果 |
-| 流式回答 | SSE 输出回答片段；汇总失败时保留查询结果并降级 |
-| 明确的数据契约 | 使用 Pydantic 定义请求、响应与前后端事件协议 |
+| 流式回答 | SSE 输出回答片段；汇总失败时保留结果并降级 |
 
-## 工作流
-
-```mermaid
-flowchart LR
-    A[用户提问] --> B[问题理解与表选择]
-    B --> C[生成 SQL]
-    C --> D[SQL 校验]
-    D -->|通过| E[只读执行]
-    D -->|可修复| F[SQL 修复]
-    E -->|可修复的错误| F
-    F --> D
-    E -->|成功| G[结果汇总]
-    G --> H[回答与数据]
-```
-
-需要补充条件时返回澄清问题；不可修复的错误或预算耗尽时结束本次查询。
-数据库执行使用传统 Python 代码，不运行模型生成的任意 Python 程序。
+模块内部由 Python 显式编排：**理解与选表 → SQL 生成 → 校验 → 只读执行 → 结果汇总**。
+需要补充条件时返回澄清问题；错误修复受次数和时间预算限制。
+数据库执行由传统 Python 代码负责，不运行模型生成的任意 Python 程序。
 
 ## 快速开始
 
@@ -118,6 +136,9 @@ Streamlit WebSocket 不等同于后端 SSE 请求。
 
 ## API 接口
 
+以下是当前已实现的接口。聊天 SSE 目前调用 SQL 模块，后续将接入统一对话服务；
+独立查询接口继续作为 SQL 能力入口。
+
 | 方法 | 路径 | 用途 |
 | :--- | :--- | :--- |
 | `POST` | `/api/v1/chat/stream` | 聊天 SSE 事件流，供前端展示过程与回答 |
@@ -135,7 +156,8 @@ Streamlit WebSocket 不等同于后端 SSE 请求。
 }
 ```
 
-前端使用 **POST fetch** 消费 SSE，按 `payload.type` 路由事件，按 `payload.tag` 选择展示组件。
+前端通过 **HTTP POST** 消费 SSE，按 `payload.type` 路由事件，按 `payload.tag` 选择展示组件。
+当前 Streamlit 页面使用 Python HTTP 客户端；自建 Web 前端可使用 POST fetch 接入。
 
 | 事件 | 推荐展示 |
 | :--- | :--- |
@@ -173,6 +195,7 @@ Invoke-RestMethod @request
 
 ## 当前边界
 
+- **统一对话入口待开发**：当前聊天面向数据库查询，普通问答、复杂任务编排与跨查询证据整合尚未接入。
 - **本地单用户服务**：默认绑定 `127.0.0.1`，暂未提供认证、多用户隔离或后台任务队列。
 - **只读 SQLite**：不支持写入、建表或任意代码执行。
 - **展示脱敏**：SSE 隐藏 SQL 字面量和参数值。当前 Chinook 应用允许仅来自公开音乐目录表的文本，客户、员工等查询继续隐藏文本；非流式 `/api/v1/query` 返回原始数据。
@@ -201,7 +224,7 @@ chatbi/
 ├── src/chatbi/
 │   ├── api/                 # FastAPI 路由与 SSE 传输
 │   ├── frontend/            # Streamlit 聊天测试页与 SSE 客户端
-│   ├── sql_agent/
+│   ├── sql_agent/           # 可独立复用的数据查询能力模块
 │   │   ├── agents/          # 模型运行时与生成、修复阶段
 │   │   ├── database/        # SQLite 适配、SQL 校验和执行
 │   │   ├── workflow.py      # 固定流程与修复编排
@@ -227,9 +250,21 @@ chatbi/
 | :--- | :--- |
 | [项目设计](docs/chatbi-project-design.md) | 产品定位、MVP 范围、对话与 SQL 能力分层、交付阶段 |
 | [功能设计](docs/chatbi-functional-design.md) | 对话、查询、追问、结果解释、多次分析与验收规则 |
-| [技术设计](docs/sql-agent-technical-design.md) | 架构、职责与安全边界 |
-| [开发计划与记录](docs/sql-agent-development-plan.md) | 分阶段实现和验收结果 |
+| [SQL Agent 技术设计](docs/sql-agent-technical-design.md) | 查询模块的架构、职责与安全边界 |
+| [SQL Agent 开发记录](docs/sql-agent-development-plan.md) | 查询模块的分阶段实现和验收结果 |
 | [SSE 交互协议](docs/chat-stream-protocol.md) | 前后端事件、组件映射与接入示例 |
 | [事件 JSON Schema](docs/chat-stream-event.schema.json) | Pydantic 生成的协议快照 |
 
-下一阶段：离线问题生成、参考 SQL 与评估集。
+## 开发路线
+
+| 阶段 | 内容 | 状态 |
+| :--- | :--- | :--- |
+| 数据查询基础 | 独立 SQL Agent、只读执行、校验修复与汇总 | 已完成 |
+| 服务与交互基础 | FastAPI、SSE、Streamlit 页面、当前会话问答上下文 | 已完成 |
+| 统一对话入口 | SQL 工具适配、普通问答路由、统一运行预算与事件聚合 | 下一阶段 |
+| 连续分析 | 结构化结果上下文、追问解释、受限多次查询与对比 | 已规划 |
+| MVP 业务验收 | 人工审核问题集、独立参考 SQL、路由与多轮评估 | 待建设 |
+| 后续能力 | 图表、导出、会话持久化、联网搜索与更多数据源 | 后续按需扩展 |
+
+第一版面向本地个人使用，以查询、追问和结果解释为主；
+完整阶段与验收规则见 [项目设计](docs/chatbi-project-design.md) 和 [功能设计](docs/chatbi-functional-design.md)。
