@@ -1,0 +1,665 @@
+{
+  "$defs": {
+    "AnswerCompleted": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "answer.completed",
+          "default": "answer.completed",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "answer",
+          "default": "answer",
+          "title": "Tag",
+          "type": "string"
+        },
+        "block_id": {
+          "format": "uuid",
+          "title": "Block Id",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "replace": {
+          "const": true,
+          "default": true,
+          "title": "Replace",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "block_id",
+        "text"
+      ],
+      "title": "AnswerCompleted",
+      "type": "object"
+    },
+    "AnswerDelta": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "answer.delta",
+          "default": "answer.delta",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "answer",
+          "default": "answer",
+          "title": "Tag",
+          "type": "string"
+        },
+        "block_id": {
+          "format": "uuid",
+          "title": "Block Id",
+          "type": "string"
+        },
+        "delta": {
+          "title": "Delta",
+          "type": "string"
+        }
+      },
+      "required": [
+        "block_id",
+        "delta"
+      ],
+      "title": "AnswerDelta",
+      "type": "object"
+    },
+    "AnswerStarted": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "answer.started",
+          "default": "answer.started",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "answer",
+          "default": "answer",
+          "title": "Tag",
+          "type": "string"
+        },
+        "block_id": {
+          "format": "uuid",
+          "title": "Block Id",
+          "type": "string"
+        },
+        "format": {
+          "const": "plain_text",
+          "default": "plain_text",
+          "title": "Format",
+          "type": "string"
+        }
+      },
+      "required": [
+        "block_id"
+      ],
+      "title": "AnswerStarted",
+      "type": "object"
+    },
+    "DisplaySQL": {
+      "additionalProperties": false,
+      "properties": {
+        "sql": {
+          "title": "Sql",
+          "type": "string"
+        },
+        "parameter_names": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Parameter Names",
+          "type": "array"
+        },
+        "redacted": {
+          "const": true,
+          "default": true,
+          "title": "Redacted",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sql",
+        "parameter_names"
+      ],
+      "title": "DisplaySQL",
+      "type": "object"
+    },
+    "EventPayload": {
+      "discriminator": {
+        "mapping": {
+          "answer.completed": "#/$defs/AnswerCompleted",
+          "answer.delta": "#/$defs/AnswerDelta",
+          "answer.started": "#/$defs/AnswerStarted",
+          "progress": "#/$defs/Progress",
+          "run.completed": "#/$defs/RunCompleted",
+          "run.error": "#/$defs/RunError",
+          "run.started": "#/$defs/RunStarted",
+          "sql.completed": "#/$defs/SQLCompleted",
+          "sql.executing": "#/$defs/SQLExecuting",
+          "sql.failed": "#/$defs/SQLFailed",
+          "sql.started": "#/$defs/SQLStarted",
+          "warning": "#/$defs/WarningEvent"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/RunStarted"
+        },
+        {
+          "$ref": "#/$defs/Progress"
+        },
+        {
+          "$ref": "#/$defs/SQLStarted"
+        },
+        {
+          "$ref": "#/$defs/SQLExecuting"
+        },
+        {
+          "$ref": "#/$defs/SQLCompleted"
+        },
+        {
+          "$ref": "#/$defs/SQLFailed"
+        },
+        {
+          "$ref": "#/$defs/AnswerStarted"
+        },
+        {
+          "$ref": "#/$defs/AnswerDelta"
+        },
+        {
+          "$ref": "#/$defs/AnswerCompleted"
+        },
+        {
+          "$ref": "#/$defs/WarningEvent"
+        },
+        {
+          "$ref": "#/$defs/RunError"
+        },
+        {
+          "$ref": "#/$defs/RunCompleted"
+        }
+      ]
+    },
+    "Progress": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "progress",
+          "default": "progress",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "progress",
+          "default": "progress",
+          "title": "Tag",
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/$defs/WorkflowStage"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stage",
+        "text"
+      ],
+      "title": "Progress",
+      "type": "object"
+    },
+    "QueryResult": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "rows": {
+          "items": {
+            "items": {
+              "$ref": "#/$defs/SQLValue"
+            },
+            "type": "array"
+          },
+          "title": "Rows",
+          "type": "array"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        },
+        "execution_time_ms": {
+          "minimum": 0,
+          "title": "Execution Time Ms",
+          "type": "number"
+        }
+      },
+      "required": [
+        "columns",
+        "rows",
+        "execution_time_ms"
+      ],
+      "title": "QueryResult",
+      "type": "object"
+    },
+    "ResponseStatus": {
+      "enum": [
+        "success",
+        "needs_clarification",
+        "failed"
+      ],
+      "title": "ResponseStatus",
+      "type": "string"
+    },
+    "RunCompleted": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "run.completed",
+          "default": "run.completed",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "lifecycle",
+          "default": "lifecycle",
+          "title": "Tag",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ResponseStatus"
+        },
+        "clarification_questions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Clarification Questions",
+          "type": "array"
+        },
+        "metadata": {
+          "$ref": "#/$defs/RunMetadata"
+        }
+      },
+      "required": [
+        "status",
+        "metadata"
+      ],
+      "title": "RunCompleted",
+      "type": "object"
+    },
+    "RunError": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "run.error",
+          "default": "run.error",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "error",
+          "default": "error",
+          "title": "Tag",
+          "type": "string"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "text"
+      ],
+      "title": "RunError",
+      "type": "object"
+    },
+    "RunMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Execution Count",
+          "type": "integer"
+        },
+        "repair_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Repair Count",
+          "type": "integer"
+        },
+        "elapsed_ms": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Elapsed Ms",
+          "type": "number"
+        }
+      },
+      "title": "RunMetadata",
+      "type": "object"
+    },
+    "RunStarted": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "run.started",
+          "default": "run.started",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "lifecycle",
+          "default": "lifecycle",
+          "title": "Tag",
+          "type": "string"
+        },
+        "user_message_id": {
+          "format": "uuid",
+          "title": "User Message Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "user_message_id"
+      ],
+      "title": "RunStarted",
+      "type": "object"
+    },
+    "SQLCompleted": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "sql.completed",
+          "default": "sql.completed",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "table",
+          "default": "table",
+          "title": "Tag",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "format": "uuid",
+          "title": "Tool Call Id",
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/QueryResult"
+        },
+        "redacted": {
+          "const": true,
+          "default": true,
+          "title": "Redacted",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tool_call_id",
+        "result"
+      ],
+      "title": "SQLCompleted",
+      "type": "object"
+    },
+    "SQLExecuting": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "sql.executing",
+          "default": "sql.executing",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "sql",
+          "default": "sql",
+          "title": "Tag",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "format": "uuid",
+          "title": "Tool Call Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_call_id"
+      ],
+      "title": "SQLExecuting",
+      "type": "object"
+    },
+    "SQLFailed": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "sql.failed",
+          "default": "sql.failed",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "sql",
+          "default": "sql",
+          "title": "Tag",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "format": "uuid",
+          "title": "Tool Call Id",
+          "type": "string"
+        },
+        "phase": {
+          "enum": [
+            "validation",
+            "execution"
+          ],
+          "title": "Phase",
+          "type": "string"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_call_id",
+        "phase",
+        "code",
+        "text"
+      ],
+      "title": "SQLFailed",
+      "type": "object"
+    },
+    "SQLStarted": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "sql.started",
+          "default": "sql.started",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "sql",
+          "default": "sql",
+          "title": "Tag",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "format": "uuid",
+          "title": "Tool Call Id",
+          "type": "string"
+        },
+        "attempt": {
+          "minimum": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "query": {
+          "$ref": "#/$defs/DisplaySQL"
+        },
+        "phase": {
+          "const": "validation",
+          "default": "validation",
+          "title": "Phase",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_call_id",
+        "attempt",
+        "query"
+      ],
+      "title": "SQLStarted",
+      "type": "object"
+    },
+    "SQLValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "WarningEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "warning",
+          "default": "warning",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "warning",
+          "default": "warning",
+          "title": "Tag",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "WarningEvent",
+      "type": "object"
+    },
+    "WorkflowStage": {
+      "enum": [
+        "schema",
+        "understanding",
+        "selection",
+        "generation",
+        "validation",
+        "execution",
+        "repair",
+        "synthesis",
+        "completed"
+      ],
+      "title": "WorkflowStage",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "protocol_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Protocol Version",
+      "type": "string"
+    },
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 1,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "conversation_id": {
+      "format": "uuid",
+      "title": "Conversation Id",
+      "type": "string"
+    },
+    "user_message_id": {
+      "format": "uuid",
+      "title": "User Message Id",
+      "type": "string"
+    },
+    "message_id": {
+      "format": "uuid",
+      "title": "Message Id",
+      "type": "string"
+    },
+    "role": {
+      "const": "assistant",
+      "default": "assistant",
+      "title": "Role",
+      "type": "string"
+    },
+    "run_id": {
+      "format": "uuid",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "payload": {
+      "$ref": "#/$defs/EventPayload"
+    }
+  },
+  "required": [
+    "sequence",
+    "conversation_id",
+    "user_message_id",
+    "message_id",
+    "run_id",
+    "payload"
+  ],
+  "title": "ChatEvent",
+  "type": "object"
+}

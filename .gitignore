@@ -21,6 +21,35 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.pyright/
+.ipynb_checkpoints/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local IDE settings
+.idea/
+.vscode/
+*.iml
+
+# Local runtime artifacts
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
 
 # Local data
 /data/*
