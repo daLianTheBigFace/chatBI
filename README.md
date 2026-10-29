@@ -87,12 +87,15 @@ OPENAI_API_KEY=your-api-key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=your-model-name
 OPENAI_REASONING_EFFORT=none
+OPENAI_VISION_MODEL=deepseek-flash
 ```
 
 模型端点需要支持 Responses API 和结构化输出；聊天正文使用流式输出。
 配置在应用启动时统一加载，`.env` 不纳入 Git。
 `OPENAI_REASONING_EFFORT=none` 在支持该参数的 Responses 模型上关闭思考；
 留空则使用模型服务默认值。当前 DeepSeek 官方端点支持此参数，修改后需要重启 FastAPI。
+`OPENAI_VISION_MODEL` 用于楼道隐患识别（见下方「楼道隐患识别」），复用同一套
+`OPENAI_API_KEY` 与 `OPENAI_BASE_URL`，仅指定视觉模型 id，缺省为 `deepseek-flash`。
 
 ### 3. 准备数据库
 
@@ -134,6 +137,48 @@ FastAPI 未启动或连接提前中断时，页面会显示明确错误。
 `text/event-stream`。Streamlit 在 Python 服务端读取 SSE，浏览器 Network 中的
 Streamlit WebSocket 不等同于后端 SSE 请求。
 
+## 模型运行时：OpenAI Agents 与 LangChain
+
+SQL Agent 的模型调用层提供两套等价实现，暴露相同的接口与事件协议，仅底层调用方式不同：
+
+| 运行时 | 包 | 模型调用 |
+| :--- | :--- | :--- |
+| OpenAI Agents SDK | `chatbi.sql_agent` | Responses API + 结构化输出（默认） |
+| LangChain | `chatbi.sql_agent_langchain` | Chat Completions + function calling |
+
+两者复用同一套理解、SQL 生成、校验、只读执行与汇总流程。默认启动使用
+OpenAI Agents SDK；切换为 LangChain 只需在创建应用时传入对应工厂：
+
+```python
+from chatbi.api.app import create_app
+from chatbi.sql_agent_langchain import open_sql_agent_langchain
+
+app = create_app(service_factory=open_sql_agent_langchain)
+```
+
+不传 `service_factory` 时走默认的 `open_sql_agent`。LangChain 版基于
+`langchain-openai`，通过 Chat Completions 与 function calling 输出结构化结果，
+适用于不支持 Responses API、但兼容 OpenAI Chat Completions 协议的端点（如 DeepSeek）。
+两种运行时共用同一份 `.env` 模型配置。
+
+## 楼道隐患识别
+
+Streamlit 侧边栏的「🔥 楼道风险识别」入口提供独立的楼道消防检查：拍照或上传图片后，
+调用 DeepSeek 视觉模型，按风险分级返回判断，共五档：
+
+| 等级 | 含义 |
+| :--- | :--- |
+| 🔴 高风险 | 电动车、电瓶、飞线充电等可能起火的元素 |
+| ⚠️ 中风险 | 大量堆积物严重阻塞通行，或大量纸箱、木质家具等可燃堵塞物 |
+| ℹ️ 低风险 | 有堆物但不严重 |
+| ✅ 无风险 | 干净、无堆放 |
+| ⚪ 非楼道 | 与楼道无关的图片 |
+
+能力通过 `POST /api/v1/fire-risk` 暴露，复用 `.env` 的模型凭证，视觉模型 id 由
+`OPENAI_VISION_MODEL` 指定（缺省 `deepseek-flash`）。视觉模型未配置或调用失败时
+返回 503 / 502，不影响 SQL 查询接口。识别用 function calling 强制结构化输出，
+并关闭思考模式——DeepSeek 思考模式不支持强制 tool_choice。
+
 ## API 接口
 
 以下是当前已实现的接口。聊天 SSE 目前调用 SQL 模块，后续将接入统一对话服务；
@@ -143,6 +188,7 @@ Streamlit WebSocket 不等同于后端 SSE 请求。
 | :--- | :--- | :--- |
 | `POST` | `/api/v1/chat/stream` | 聊天 SSE 事件流，供前端展示过程与回答 |
 | `POST` | `/api/v1/query` | 一次性返回 SQL、结果和回答 |
+| `POST` | `/api/v1/fire-risk` | 上传楼道图片，返回火灾隐患分级 |
 | `GET` | `/api/v1/chat/events/schema` | 获取完整事件 JSON Schema |
 | `GET` | `/health` | 检查应用是否已完成启动 |
 | `GET` | `/docs` | Swagger 交互式文档 |
@@ -212,8 +258,9 @@ uv run ruff format src tests
 uv lock --check             # 检查依赖锁文件
 ```
 
-当前 **231 项测试通过**，覆盖只读防护、工作流修复、预算与取消、汇总降级、SSE 生命周期、
-脱敏、前端 SSE 消费、Streamlit 页面渲染及多轮上下文传递。
+当前 **258 项测试通过**，覆盖只读防护、工作流修复、预算与取消、汇总降级、SSE 生命周期、
+脱敏、前端 SSE 消费、Streamlit 页面渲染、多轮上下文传递，以及 LangChain 运行时与
+楼道隐患识别。
 真实模型端到端样例已验证 Chinook 艺术家总数为 **275**；该样例不代表整体业务准确率。
 
 <details>
@@ -233,6 +280,8 @@ chatbi/
 │   │   ├── streaming.py     # 事件通道与展示投影
 │   │   ├── redaction.py     # 可替换的脱敏策略
 │   │   └── summary.py       # 结果汇总策略
+│   ├── sql_agent_langchain/ # LangChain 版模型运行时（复用 sql_agent 工作流）
+│   ├── fire_risk/           # 楼道隐患识别（视觉模型分级）
 │   └── settings.py          # 模型配置加载
 ├── tests/                   # 离线测试
 ├── docs/                    # 设计、协议与开发记录

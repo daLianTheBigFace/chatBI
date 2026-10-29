@@ -7,10 +7,12 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import ValidationError
 
+from chatbi.fire_risk.models import FireRiskResponse
 from chatbi.sql_agent.events import ChatEvent, ChatRequest
 
 DEFAULT_API_URL = "http://127.0.0.1:8000"
 STREAM_PATH = "/api/v1/chat/stream"
+FIRE_RISK_PATH = "/api/v1/fire-risk"
 CONNECT_TIMEOUT_SECONDS = 5.0
 READ_TIMEOUT_SECONDS = 120.0
 MAX_FRAME_CHARACTERS = 4 * 1024 * 1024
@@ -22,7 +24,7 @@ class StreamError(Exception):
     """Safe message suitable for display without backend payload details."""
 
 
-def stream_url(base_url: str) -> str:
+def _validated_base(base_url: str) -> str:
     base_url = base_url.strip().rstrip("/")
     try:
         parts = urlsplit(base_url)
@@ -38,7 +40,11 @@ def stream_url(base_url: str) -> str:
         valid = False
     if not valid:
         raise StreamError("请输入有效的 HTTP/HTTPS 后端地址，不含凭据、查询参数或片段。")
-    return base_url + STREAM_PATH
+    return base_url
+
+
+def stream_url(base_url: str) -> str:
+    return _validated_base(base_url) + STREAM_PATH
 
 
 def parse_events(lines: Iterable[str]) -> Iterator[ChatEvent]:
@@ -133,3 +139,28 @@ def open_chat_stream(
         raise StreamError("等待后端超时，请检查服务状态后重试。") from None
     except httpx.HTTPError:
         raise StreamError("无法连接后端或流已中断，请确认 FastAPI 服务已启动。") from None
+
+
+def assess_fire_risk(
+    base_url: str, image_base64: str, mime_type: str = "image/jpeg"
+) -> FireRiskResponse:
+    """POST one image to the fire-risk endpoint and return the validated verdict."""
+    url = _validated_base(base_url) + FIRE_RISK_PATH
+    timeout = httpx.Timeout(READ_TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS)
+    try:
+        with httpx.Client(timeout=timeout, trust_env=False) as client:
+            response = client.post(
+                url, json={"image_base64": image_base64, "mime_type": mime_type}
+            )
+    except httpx.TimeoutException:
+        raise StreamError("等待后端超时，请检查服务状态后重试。") from None
+    except httpx.HTTPError:
+        raise StreamError("无法连接后端，请确认 FastAPI 服务已启动。") from None
+    if response.status_code != httpx.codes.OK:
+        detail = "未知错误"
+        try:
+            detail = response.json().get("detail", detail)
+        except ValueError:
+            pass
+        raise StreamError(f"识别失败（HTTP {response.status_code}）：{detail}")
+    return FireRiskResponse.model_validate(response.json())

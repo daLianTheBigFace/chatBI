@@ -26,10 +26,12 @@ ENV_API_KEY = "OPENAI_API_KEY"
 ENV_BASE_URL = "OPENAI_BASE_URL"
 ENV_MODEL = "OPENAI_MODEL"
 ENV_REASONING_EFFORT = "OPENAI_REASONING_EFFORT"
+ENV_VISION_MODEL = "OPENAI_VISION_MODEL"
 MODEL_ENV_KEYS = (ENV_API_KEY, ENV_BASE_URL, ENV_MODEL, ENV_REASONING_EFFORT)
 DEFAULT_MODEL_TIMEOUT_SECONDS = 45.0
 DEFAULT_MODEL_MAX_TURNS = 1
 DEFAULT_MODEL_MAX_RETRIES = 0
+DEFAULT_VISION_MODEL = "deepseek-flash"
 INVALID_MODEL_CONFIG = "Model configuration is missing or invalid; check OPENAI_* settings"
 
 
@@ -83,3 +85,19 @@ def load_model_config(
         )
     except (ValidationError, OSError):
         raise SQLAgentError(ErrorCode.CONFIGURATION, INVALID_MODEL_CONFIG) from None
+
+
+def load_fire_risk_config(
+    project_root: Path, *, environment: Mapping[str, str] | None = None
+) -> ModelConfig:
+    """Vision model reuses the endpoint credentials but selects its own model id.
+
+    The fire-risk capability runs against the same DeepSeek endpoint as the SQL
+    agent; only ``model`` differs. ``OPENAI_VISION_MODEL`` overrides the default
+    (``deepseek-flash``), falling back to that id when unset.
+    """
+    base = load_model_config(project_root, environment=environment)
+    values = dotenv_values(project_root / ENV_FILE_NAME, interpolate=False)
+    environ = os.environ if environment is None else environment
+    model = environ.get(ENV_VISION_MODEL, values.get(ENV_VISION_MODEL)) or DEFAULT_VISION_MODEL
+    return base.model_copy(update={"model": model})

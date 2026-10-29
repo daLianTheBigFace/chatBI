@@ -1,5 +1,6 @@
 """Run via: uv run streamlit run src/chatbi/frontend/app.py."""
 
+import base64
 from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
@@ -9,7 +10,13 @@ import streamlit as st
 from pydantic import ValidationError
 from streamlit.delta_generator import DeltaGenerator
 
-from chatbi.frontend.client import DEFAULT_API_URL, StreamError, open_chat_stream
+from chatbi.fire_risk.models import FireRiskResponse
+from chatbi.frontend.client import (
+    DEFAULT_API_URL,
+    StreamError,
+    assess_fire_risk,
+    open_chat_stream,
+)
 from chatbi.frontend.conversation import (
     MAX_VISIBLE_TURNS,
     ConversationTurn,
@@ -59,6 +66,26 @@ EXECUTING = "执行中"
 SUCCEEDED = "执行成功"
 FAILED = "失败"
 MAX_DEBUG_EVENTS = 200
+
+FIRE_RISK_TITLE = "楼道风险识别"
+FIRE_RISK_INTRO = "拍照或上传图片，用 DeepSeek 视觉模型判断楼道消防安全隐患。"
+FIRE_RISK_SOURCE_LABEL = "图片来源"
+FIRE_RISK_CAMERA_LABEL = "拍一张楼道照片"
+FIRE_RISK_UPLOAD_LABEL = "上传楼道照片"
+FIRE_RISK_ASSESS_LABEL = "识别隐患"
+FIRE_RISK_EMPTY = "拍照或上传一张照片开始识别"
+FIRE_RISK_SPINNER = "正在识别…"
+FIRE_RISK_IMAGE_KEY = "fire_risk_image"
+FIRE_RISK_MIME_KEY = "fire_risk_mime"
+FIRE_RISK_RESULT_KEY = "fire_risk_result"
+FIRE_RISK_UPLOAD_TYPES = ["jpg", "jpeg", "png", "webp"]
+RISK_PRESENTATION = {
+    "none": ("✅", "无风险"),
+    "low": ("ℹ️", "低风险"),
+    "medium": ("⚠️", "中风险"),
+    "high": ("🔴", "高风险"),
+    "not_corridor": ("⚪", "非楼道"),
+}
 
 
 @dataclass
@@ -191,8 +218,11 @@ def render_turn(turn: ConversationTurn, show_debug: bool) -> ChatView:
         return view
 
 
-def main() -> None:
-    st.set_page_config(page_title=PAGE_TITLE, page_icon=PAGE_ICON, layout="wide")
+def _backend_url() -> str:
+    return st.sidebar.text_input(BACKEND_LABEL, value=DEFAULT_API_URL, key="chatbi_backend_url")
+
+
+def chat_page() -> None:
     st.title(PAGE_TITLE)
     st.caption(INTRO)
     if TURNS_KEY not in st.session_state:
@@ -201,7 +231,7 @@ def main() -> None:
     turns = st.session_state[TURNS_KEY]
     with st.sidebar:
         st.header("连接设置")
-        base_url = st.text_input(BACKEND_LABEL, value=DEFAULT_API_URL)
+        base_url = _backend_url()
         show_debug = st.checkbox(DEBUG_LABEL, value=False)
         if st.button(NEW_CONVERSATION_LABEL):
             turns.clear()
@@ -250,6 +280,71 @@ def main() -> None:
     if turn.error:
         view.status.update(label=REQUEST_FAILURE, state="error")
         view.notices.error(turn.error)
+
+
+def _render_risk_result(result: FireRiskResponse) -> None:
+    icon, _ = RISK_PRESENTATION.get(result.level.value, ("❓", "未知"))
+    st.divider()
+    st.markdown(f"### {icon} 风险等级：{result.level_label}")
+    st.write(result.reasoning)
+    if result.hazards:
+        st.markdown("**识别到的隐患：**")
+        for hazard in result.hazards:
+            st.markdown(f"- ⚠️ {hazard}")
+
+
+def fire_risk_page() -> None:
+    st.title(FIRE_RISK_TITLE)
+    st.caption(FIRE_RISK_INTRO)
+    base_url = _backend_url()
+
+    source = st.radio(FIRE_RISK_SOURCE_LABEL, ["📷 拍照", "📁 上传"], horizontal=True)
+    new_image: bytes | None = None
+    new_mime = "image/jpeg"
+    if source == "📷 拍照":
+        photo = st.camera_input(FIRE_RISK_CAMERA_LABEL)
+        if photo is not None:
+            new_image = photo.getvalue()
+            new_mime = photo.type
+    else:
+        uploaded = st.file_uploader(FIRE_RISK_UPLOAD_LABEL, type=FIRE_RISK_UPLOAD_TYPES)
+        if uploaded is not None:
+            new_image = uploaded.getvalue()
+            new_mime = uploaded.type
+
+    if new_image is not None:
+        st.session_state[FIRE_RISK_IMAGE_KEY] = new_image
+        st.session_state[FIRE_RISK_MIME_KEY] = new_mime
+        st.session_state.pop(FIRE_RISK_RESULT_KEY, None)
+
+    image_bytes = st.session_state.get(FIRE_RISK_IMAGE_KEY)
+    mime_type = st.session_state.get(FIRE_RISK_MIME_KEY, "image/jpeg")
+    if image_bytes is None:
+        st.info(FIRE_RISK_EMPTY)
+        return
+
+    st.image(image_bytes, caption="待识别图片", use_container_width=True)
+    if st.button(f"🔍 {FIRE_RISK_ASSESS_LABEL}", type="primary"):
+        encoded = base64.b64encode(image_bytes).decode()
+        with st.spinner(FIRE_RISK_SPINNER):
+            try:
+                result = assess_fire_risk(base_url, encoded, mime_type)
+            except StreamError as exc:
+                st.error(str(exc))
+                return
+        st.session_state[FIRE_RISK_RESULT_KEY] = result
+
+    if FIRE_RISK_RESULT_KEY in st.session_state:
+        _render_risk_result(st.session_state[FIRE_RISK_RESULT_KEY])
+
+
+def main() -> None:
+    st.set_page_config(page_title=PAGE_TITLE, page_icon=PAGE_ICON, layout="wide")
+    page = st.sidebar.radio("功能菜单", ["💬 SQL 查询", "🔥 楼道风险识别"])
+    if page == "🔥 楼道风险识别":
+        fire_risk_page()
+    else:
+        chat_page()
 
 
 if __name__ == "__main__":
