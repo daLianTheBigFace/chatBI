@@ -13,6 +13,7 @@ from chatbi.sql_agent.models import (
     ConversationContext,
     NonEmptyText,
     QueryResult,
+    RunContinuation,
     RunMetadata,
     SQLQuery,
 )
@@ -120,6 +121,12 @@ class RunCompleted(Contract):
     metadata: RunMetadata
 
 
+class ApprovalRequired(Contract):
+    type: Literal["approval.required"] = "approval.required"
+    tag: Literal["lifecycle"] = "lifecycle"
+    continuation: RunContinuation
+
+
 type EventPayload = Annotated[
     RunStarted
     | Progress
@@ -132,6 +139,7 @@ type EventPayload = Annotated[
     | AnswerCompleted
     | WarningEvent
     | RunError
+    | ApprovalRequired
     | RunCompleted,
     Field(discriminator="type"),
 ]

@@ -139,14 +139,14 @@ Streamlit WebSocket 不等同于后端 SSE 请求。
 
 ## 模型运行时：OpenAI Agents 与 LangChain
 
-SQL Agent 的模型调用层提供两套等价实现，暴露相同的接口与事件协议，仅底层调用方式不同：
+SQL Agent 保留两套后端：OpenAI Agents 使用原有工作流；LangChain 使用原生 Agent 与 LangGraph 编排。
 
 | 运行时 | 包 | 模型调用 |
 | :--- | :--- | :--- |
 | OpenAI Agents SDK | `chatbi.sql_agent` | Responses API + 结构化输出（默认） |
 | LangChain | `chatbi.sql_agent_langchain` | Chat Completions + function calling |
 
-两者复用同一套理解、SQL 生成、校验、只读执行与汇总流程。默认启动使用
+两者共享 SQL 契约、只读数据库与安全校验。LangChain 独立编排多 Agent，并支持隐私审批暂停与恢复。默认启动使用
 OpenAI Agents SDK；切换为 LangChain 只需在创建应用时传入对应工厂：
 
 ```python
@@ -160,6 +160,12 @@ app = create_app(service_factory=open_sql_agent_langchain)
 `langchain-openai`，通过 Chat Completions 与 function calling 输出结构化结果，
 适用于不支持 Responses API、但兼容 OpenAI Chat Completions 协议的端点（如 DeepSeek）。
 两种运行时共用同一份 `.env` 模型配置。
+
+LangChain 版本使用 `create_agent` 创建理解、生成、修复、汇总及两个隐私审核 Agent，
+通过 LangGraph 节点与条件边编排，使用 `interrupt` / `Command(resume=...)` 进行人工审批。
+前端 run 创建、查询、恢复与取消接口、权限配置和检查点密钥见
+[LangChain 接口与使用说明](docs/langchain-sql-agent-workflow.md)。
+原 OpenAI Agents 路径不变；LangChain 的非流式查询也受结果隐私审批约束。
 
 ## 楼道隐患识别
 
@@ -258,7 +264,7 @@ uv run ruff format src tests
 uv lock --check             # 检查依赖锁文件
 ```
 
-当前 **258 项测试通过**，覆盖只读防护、工作流修复、预算与取消、汇总降级、SSE 生命周期、
+离线测试覆盖只读防护、工作流修复、预算与取消、汇总降级、SSE 生命周期、
 脱敏、前端 SSE 消费、Streamlit 页面渲染、多轮上下文传递，以及 LangChain 运行时与
 楼道隐患识别。
 真实模型端到端样例已验证 Chinook 艺术家总数为 **275**；该样例不代表整体业务准确率。
@@ -280,7 +286,7 @@ chatbi/
 │   │   ├── streaming.py     # 事件通道与展示投影
 │   │   ├── redaction.py     # 可替换的脱敏策略
 │   │   └── summary.py       # 结果汇总策略
-│   ├── sql_agent_langchain/ # LangChain 版模型运行时（复用 sql_agent 工作流）
+│   ├── sql_agent_langchain/ # 原生多 Agent、LangGraph 与隐私审批暂停/恢复
 │   ├── fire_risk/           # 楼道隐患识别（视觉模型分级）
 │   └── settings.py          # 模型配置加载
 ├── tests/                   # 离线测试

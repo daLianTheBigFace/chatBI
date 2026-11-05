@@ -13,6 +13,7 @@ from chatbi.sql_agent.events import (
     AnswerCompleted,
     AnswerDelta,
     AnswerStarted,
+    ApprovalRequired,
     ChatEvent,
     ChatRequest,
     EventPayload,
@@ -151,6 +152,8 @@ async def stream_response(
             )
             if response.answer is not None:
                 await channel.finish_answer(response.answer)
+            if response.continuation is not None:
+                await channel.emit(ApprovalRequired(continuation=response.continuation))
             for warning in response.warnings:
                 await channel.emit(WarningEvent(text=channel.display.text(warning)))
             if response.error is not None:

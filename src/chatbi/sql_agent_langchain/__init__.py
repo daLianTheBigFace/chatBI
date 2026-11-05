@@ -1,4 +1,4 @@
-"""LangChain-backed SQL agent mirroring the openai-agents variant, via langchain-openai."""
+"""Native LangChain specialists, durable LangGraph orchestration and human approval."""
 
 from chatbi.sql_agent_langchain.bootstrap import open_sql_agent_langchain
 from chatbi.sql_agent_langchain.runtime import LangChainRunner

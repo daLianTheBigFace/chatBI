@@ -151,6 +151,20 @@ def test_api_contract_and_lifespan(tmp_path, status):
                 }
             elif status == ResponseStatus.NEEDS_CLARIFICATION:
                 fields = {"clarification_questions": ["统计哪个表？"]}
+            elif status == ResponseStatus.AWAITING_APPROVAL:
+                from chatbi.sql_agent.models import PermissionRequest, RunContinuation
+
+                fields = {
+                    "continuation": RunContinuation(
+                        run_id="test",
+                        run_token="test-token",
+                        approval=PermissionRequest(
+                            interrupt_id="test", kind="result_disclosure", reason="需要原值"
+                        ),
+                    )
+                }
+            elif status == ResponseStatus.CANCELLED:
+                fields = {"answer": "运行已取消。"}
             else:
                 fields = {"error": ValidationIssue(code=ErrorCode.TIMEOUT, message="请求超时")}
             return SQLAgentResponse(request_id="test", status=status, **fields)

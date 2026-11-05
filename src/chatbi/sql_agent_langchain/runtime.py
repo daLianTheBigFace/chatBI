@@ -41,9 +41,16 @@ class LangChainRunner:
         self._model = ChatOpenAI(
             model=config.model,
             api_key=config.api_key.get_secret_value(),
-            async_client=self._client,
+            base_url=str(config.base_url),
+            async_client=self._client.chat.completions,
+            root_async_client=self._client,
+            use_responses_api=False,
             reasoning_effort=config.reasoning_effort,
         )
+
+    @property
+    def model(self) -> ChatOpenAI:
+        return self._model
 
     async def run[T: BaseModel](
         self, *, name: str, instructions: str, user_input: str, output_type: type[T]

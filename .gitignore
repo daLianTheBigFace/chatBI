@@ -36,6 +36,7 @@ coverage.xml
 *.iml
 
 # Local runtime artifacts
+.chatbi/
 *.log
 *.sqlite
 *.sqlite3

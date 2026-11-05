@@ -9,6 +9,7 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 
+from chatbi.api.langchain_runs import router as langchain_runs_router
 from chatbi.api.sse import (
     SSE_HEADERS,
     SSE_MEDIA_TYPE,
@@ -47,6 +48,13 @@ def get_fire_risk_service(request: Request) -> FireRiskService | None:
     return request.app.state.fire_risk
 
 
+def create_langchain_app() -> FastAPI:
+    """Uvicorn factory for the native LangChain/LangGraph backend."""
+    from chatbi.sql_agent_langchain import open_sql_agent_langchain
+
+    return create_app(service_factory=open_sql_agent_langchain)
+
+
 def create_app(
     project_root: Path | None = None,
     *,
@@ -58,7 +66,7 @@ def create_app(
     ``service_factory`` selects the model runtime behind every SQL endpoint:
 
     - ``open_sql_agent`` (default) drives the workflow with the OpenAI Agents SDK.
-    - ``open_sql_agent_langchain`` drives the same workflow with a LangChain runner.
+    - ``open_sql_agent_langchain`` drives native agents in a checkpointed LangGraph.
 
     Both expose identical endpoints; choose the runtime at startup by passing the
     factory instead of relying on the default:
@@ -86,6 +94,7 @@ def create_app(
                 del app.state.fire_risk
 
     app = FastAPI(title=APP_TITLE, version=APP_VERSION, lifespan=lifespan)
+    app.include_router(langchain_runs_router)
 
     @app.get(HEALTH_PATH)
     async def health() -> dict[str, str]:

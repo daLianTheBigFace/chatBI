@@ -105,6 +105,21 @@ class RunMetadata(Contract):
     elapsed_ms: float = Field(default=0, ge=0)
 
 
+class PermissionRequest(Contract):
+    interrupt_id: str
+    kind: Literal["database_access", "result_disclosure"]
+    reason: str
+    tables: list[str] = Field(default_factory=list)
+    columns: dict[str, list[str]] = Field(default_factory=dict)
+    scope: Literal["current_run"] = "current_run"
+
+
+class RunContinuation(Contract):
+    run_id: str
+    run_token: str
+    approval: PermissionRequest | None = None
+
+
 class SQLAgentResponse(Contract):
     request_id: str
     status: ResponseStatus
@@ -115,6 +130,7 @@ class SQLAgentResponse(Contract):
     warnings: list[str] = Field(default_factory=list)
     error: ValidationIssue | None = None
     metadata: RunMetadata = Field(default_factory=RunMetadata)
+    continuation: RunContinuation | None = None
 
     @model_validator(mode="after")
     def check_status_payload(self) -> Self:
@@ -133,4 +149,12 @@ class SQLAgentResponse(Contract):
                 raise ValueError("Failure requires an error")
             if self.result is not None or self.clarification_questions:
                 raise ValueError("Failure cannot include a result or clarification questions")
+        elif self.status == ResponseStatus.AWAITING_APPROVAL:
+            if self.continuation is None or self.continuation.approval is None:
+                raise ValueError("Paused runs require an approval and continuation")
+            if self.result is not None or self.answer is not None:
+                raise ValueError("Paused runs cannot disclose results")
+        elif self.status == ResponseStatus.CANCELLED:
+            if not self.answer or self.result is not None:
+                raise ValueError("Cancelled runs require a notice and cannot include results")
         return self

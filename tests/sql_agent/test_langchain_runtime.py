@@ -1,6 +1,7 @@
 """LangChain runner backed by langchain-openai, verified without network access."""
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -49,6 +50,7 @@ class FakeClient:
     def __init__(self, **kwargs):
         self.config = kwargs
         self.closed = False
+        self.chat = SimpleNamespace(completions=object())
 
     async def close(self):
         self.closed = True
@@ -87,7 +89,9 @@ def test_runner_injects_model_config(monkeypatch):
     assert runner._model.config["model"] == "deepseek-chat"
     assert runner._model.config["api_key"] == "test-only-secret"
     assert runner._model.config["reasoning_effort"] == "low"
-    assert runner._model.config["async_client"] is runner._client
+    assert runner._model.config["async_client"] is runner._client.chat.completions
+    assert runner._model.config["root_async_client"] is runner._client
+    assert runner._model.config["use_responses_api"] is False
     assert runner._client.config["api_key"] == "test-only-secret"
     assert runner._client.config["base_url"] == "https://example.test/v1"
     assert runner._client.config["timeout"] == 45.0
@@ -245,6 +249,76 @@ def test_runner_refuses_calls_after_close(monkeypatch):
     asyncio.run(scenario())
 
 
+def test_native_agent_uses_configured_chat_completions_transport(monkeypatch):
+    """Catch root-client/resource mixups that fake model objects cannot detect."""
+    import json
+
+    import httpx
+    from openai import AsyncOpenAI
+
+    from chatbi.sql_agent_langchain.agents import LangChainAgents
+
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "deepseek-chat",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call-summary",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "SummaryAnswer",
+                                        "arguments": '{"answer":"275 artists"}',
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+            },
+        )
+
+    def client_factory(**kwargs):
+        return AsyncOpenAI(
+            **kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        )
+
+    monkeypatch.setattr("chatbi.sql_agent_langchain.runtime.AsyncOpenAI", client_factory)
+
+    async def scenario():
+        async with LangChainRunner(model_config()) as runner:
+            output = await LangChainAgents(runner.model, 5).invoke(
+                "summary",
+                {
+                    "question": "artist count",
+                    "result": {"rows": [[275]]},
+                },
+                [],
+            )
+            assert output.answer == "275 artists"
+
+    asyncio.run(scenario())
+    assert len(requests) == 1
+    assert str(requests[0].url) == "https://example.test/v1/chat/completions"
+    payload = json.loads(requests[0].content)
+    assert payload["tools"][0]["function"]["name"] == "SummaryAnswer"
+    assert payload["messages"][0]["role"] == "system"
+
+
 # --- bootstrap -----------------------------------------------------------
 
 
@@ -260,6 +334,8 @@ def test_bootstrap_langchain_closes_resources_on_failure(tmp_path, monkeypatch):
             self.closed = True
 
     class DummyRunner:
+        model = None
+
         def __init__(self, *args, **kwargs):
             self.closed = False
             resources["model"] = self
@@ -283,8 +359,9 @@ def test_bootstrap_langchain_closes_resources_on_failure(tmp_path, monkeypatch):
 
 
 def test_langchain_factory_drives_create_app(tmp_path, monkeypatch):
-    from chatbi.api.app import create_app
     from fastapi.testclient import TestClient
+
+    from chatbi.api.app import create_app
 
     resources = {}
 
@@ -297,6 +374,8 @@ def test_langchain_factory_drives_create_app(tmp_path, monkeypatch):
             self.closed = True
 
     class DummyRunner:
+        model = None
+
         def __init__(self, *args, **kwargs):
             self.closed = False
             resources["model"] = self

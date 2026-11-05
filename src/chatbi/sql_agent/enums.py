@@ -7,6 +7,8 @@ class ResponseStatus(StrEnum):
     SUCCESS = "success"
     NEEDS_CLARIFICATION = "needs_clarification"
     FAILED = "failed"
+    AWAITING_APPROVAL = "awaiting_approval"
+    CANCELLED = "cancelled"
 
 
 class ErrorCode(StrEnum):

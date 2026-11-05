@@ -103,6 +103,31 @@
       "title": "AnswerStarted",
       "type": "object"
     },
+    "ApprovalRequired": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "approval.required",
+          "default": "approval.required",
+          "title": "Type",
+          "type": "string"
+        },
+        "tag": {
+          "const": "lifecycle",
+          "default": "lifecycle",
+          "title": "Tag",
+          "type": "string"
+        },
+        "continuation": {
+          "$ref": "#/$defs/RunContinuation"
+        }
+      },
+      "required": [
+        "continuation"
+      ],
+      "title": "ApprovalRequired",
+      "type": "object"
+    },
     "DisplaySQL": {
       "additionalProperties": false,
       "properties": {
@@ -137,6 +162,7 @@
           "answer.completed": "#/$defs/AnswerCompleted",
           "answer.delta": "#/$defs/AnswerDelta",
           "answer.started": "#/$defs/AnswerStarted",
+          "approval.required": "#/$defs/ApprovalRequired",
           "progress": "#/$defs/Progress",
           "run.completed": "#/$defs/RunCompleted",
           "run.error": "#/$defs/RunError",
@@ -184,9 +210,63 @@
           "$ref": "#/$defs/RunError"
         },
         {
+          "$ref": "#/$defs/ApprovalRequired"
+        },
+        {
           "$ref": "#/$defs/RunCompleted"
         }
       ]
+    },
+    "PermissionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "interrupt_id": {
+          "title": "Interrupt Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "database_access",
+            "result_disclosure"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "tables": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tables",
+          "type": "array"
+        },
+        "columns": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Columns",
+          "type": "object"
+        },
+        "scope": {
+          "const": "current_run",
+          "default": "current_run",
+          "title": "Scope",
+          "type": "string"
+        }
+      },
+      "required": [
+        "interrupt_id",
+        "kind",
+        "reason"
+      ],
+      "title": "PermissionRequest",
+      "type": "object"
     },
     "Progress": {
       "additionalProperties": false,
@@ -261,7 +341,9 @@
       "enum": [
         "success",
         "needs_clarification",
-        "failed"
+        "failed",
+        "awaiting_approval",
+        "cancelled"
       ],
       "title": "ResponseStatus",
       "type": "string"
@@ -300,6 +382,36 @@
         "metadata"
       ],
       "title": "RunCompleted",
+      "type": "object"
+    },
+    "RunContinuation": {
+      "additionalProperties": false,
+      "properties": {
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "run_token": {
+          "title": "Run Token",
+          "type": "string"
+        },
+        "approval": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PermissionRequest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "run_id",
+        "run_token"
+      ],
+      "title": "RunContinuation",
       "type": "object"
     },
     "RunError": {
