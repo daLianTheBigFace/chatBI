@@ -1,0 +1,12 @@
+#!/bin/sh
+# Block commits that contain secret-shaped strings.
+# Install once per machine: git config core.hooksPath .githooks
+set -e
+
+PY=$(command -v python || command -v python3 || true)
+if [ -z "$PY" ]; then
+    echo "pre-commit: python not found, skipping secret scan"
+    exit 0
+fi
+
+"$PY" scripts/check_secrets.py --staged
