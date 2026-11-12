@@ -12,21 +12,31 @@ dependencies = [
     "cryptography>=46,<51",
     "fastapi>=0.115,<1",
     "httpx>=0.28,<1",
+    "kafka-python>=3.0.13",
     "langchain>=1.0,<2",
     "langchain-core>=1.0,<2",
     "langchain-openai>=1.7,<2",
     "langgraph>=1.0,<2",
     "langgraph-checkpoint-sqlite>=3,<4",
+    "numpy>=2.0",
     "openai>=3.0,<4",
     "openai-agents>=0.24.0",
     "openpyxl>=3.1.5",
     "pandas>=3.1.0",
     "pydantic>=2.12,<3",
     "python-dotenv>=1.2.4",
+    "python-multipart>=0.0.20",
+    "redis>=8.1.0",
     "sqlalchemy>=2.0,<3",
     "sqlglot>=28,<31",
     "streamlit>=1.45,<2",
     "uvicorn>=0.30,<1",
+]
+
+[project.optional-dependencies]
+# bge-m3 向量化要 torch，约 2.5GB，单独一组：不装也能跑（退到 hash 向量做联动调试）
+embed = [
+    "sentence-transformers>=3.0",
 ]
 
 [project.scripts]
@@ -48,6 +58,12 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# 画图脚本按坐标排布，一行一个 box、字符串就是图上文字，拆行反而看不清排版
+"scripts/draw_*.py" = ["E501", "B007", "B905"]
+# e2e 脚本的 print 是给人看的进度行，拆开就没法对着日志找位置
+"scripts/mmrag_*_e2e.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

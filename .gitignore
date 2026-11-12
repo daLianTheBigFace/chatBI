@@ -1,4 +1,4 @@
-# Byte-compiled / optimized / DLL files
+﻿# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
@@ -57,3 +57,8 @@ Desktop.ini
 # Local data
 /data/*
 !/data/.gitkeep
+
+# Scratch / debug output (script temp dirs and ad-hoc probes)
+/tmp/
+/tmp*
+

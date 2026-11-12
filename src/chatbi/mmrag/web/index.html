@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>多模态 RAG</title>
+<style>
+  :root {
+    --ink: #16202b; --sub: #5b6b7c; --line: #e3e9f0;
+    --blue: #2563eb; --green: #10b981; --amber: #d97706; --pink: #db3e77; --red: #dc2626;
+    --bg: #f6f8fb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.6 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  header {
+    padding: 18px 28px; background: #fff; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header span { color: var(--sub); font-size: 12px; }
+  main {
+    display: grid; grid-template-columns: 380px 1fr; gap: 0;
+    height: calc(100vh - 62px);
+  }
+  /* 左侧：文档区 */
+  .side { padding: 18px; overflow-y: auto; border-right: 1px solid var(--line); background: #fff; }
+  .drop {
+    border: 1.5px dashed #c7d3e2; border-radius: 12px; padding: 22px 16px; text-align: center;
+    color: var(--sub); cursor: pointer; transition: .15s; background: #fbfcfe;
+  }
+  .drop.hot { border-color: var(--blue); background: #eff4ff; color: var(--blue); }
+  .drop b { color: var(--blue); }
+  .docs { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .doc {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #fff;
+  }
+  .doc .name { font-weight: 600; word-break: break-all; }
+  .doc .meta { color: var(--sub); font-size: 12px; margin-top: 2px; display: flex; gap: 10px; align-items: center; }
+  .badge {
+    font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid transparent;
+  }
+  .badge.pending { color: var(--amber); background: #fff7ed; border-color: #fed7aa; }
+  .badge.parsing { color: var(--blue); background: #eff6ff; border-color: #bfdbfe; }
+  .badge.done { color: var(--green); background: #ecfdf5; border-color: #a7f3d0; }
+  .badge.failed { color: var(--red); background: #fef2f2; border-color: #fecaca; }
+  .retry {
+    margin-left: auto; font-size: 12px; color: var(--blue); cursor: pointer;
+    background: none; border: none; padding: 0 2px;
+  }
+  .err { color: var(--red); font-size: 12px; margin-top: 4px; word-break: break-all; }
+  /* 右侧：对话区 */
+  .chat { display: flex; flex-direction: column; min-height: 0; }
+  .turns { flex: 1; overflow-y: auto; padding: 24px 32px; display: flex; flex-direction: column; gap: 18px; }
+  .turn { display: flex; gap: 10px; max-width: 860px; }
+  .turn.user { align-self: flex-end; flex-direction: row-reverse; }
+  .avatar {
+    width: 28px; height: 28px; border-radius: 8px; flex: 0 0 28px;
+    display: grid; place-items: center; font-size: 13px; color: #fff; background: var(--blue);
+  }
+  .turn.assistant .avatar { background: var(--green); }
+  .bubble { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .turn.user .bubble { background: #eff4ff; border-color: #dbeafe; }
+  .bubble p { margin: 0 0 8px; white-space: pre-wrap; }
+  .bubble p:last-child { margin-bottom: 0; }
+  .cite { color: var(--blue); font-size: 11px; background: #eff4ff; border-radius: 4px; padding: 0 4px; margin: 0 1px; }
+  .bubble img { max-width: 100%; border-radius: 8px; border: 1px solid var(--line); margin-top: 8px; display: block; }
+  .bubble table { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+  .bubble td, .bubble th { border: 1px solid var(--line); padding: 4px 8px; }
+  .bubble pre { background: #f6f8fb; padding: 8px; border-radius: 6px; overflow-x: auto; }
+  .composer {
+    border-top: 1px solid var(--line); background: #fff; padding: 14px 32px 18px;
+  }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .chip {
+    font-size: 12px; color: var(--sub); border: 1px solid var(--line); background: #fff;
+    border-radius: 999px; padding: 3px 10px; cursor: pointer;
+  }
+  .chip:hover { border-color: var(--blue); color: var(--blue); }
+  .row { display: flex; gap: 10px; align-items: flex-end; }
+  textarea {
+    flex: 1; resize: none; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+    font: inherit; min-height: 44px; max-height: 140px; outline: none;
+  }
+  textarea:focus { border-color: var(--blue); }
+  .send {
+    border: none; background: var(--blue); color: #fff; border-radius: 10px;
+    padding: 10px 18px; font: inherit; cursor: pointer;
+  }
+  .send:disabled { background: #b9c6d8; cursor: default; }
+  .tools { display: flex; gap: 14px; align-items: center; margin-top: 8px; font-size: 12px; color: var(--sub); }
+  .tools label { cursor: pointer; color: var(--blue); }
+  .thumb { font-size: 12px; color: var(--green); }
+  .hint { font-size: 12px; color: var(--sub); }
+  .empty { color: var(--sub); text-align: center; margin: 60px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>多模态 RAG</h1>
+  <span>上传 PDF → 实例 GPU 解析 → 本机切块入库 → 图文问答</span>
+</header>
+
+<main>
+  <aside class="side">
+    <div class="drop" id="drop">
+      把 PDF 拖进来，或 <b>点这里选择</b><br />
+      <small>支持一次选多个，逐个提交、逐个显示进度</small>
+      <input type="file" id="file" accept="application/pdf" multiple hidden />
+    </div>
+    <div class="docs" id="docs"></div>
+  </aside>
+
+  <section class="chat">
+    <div class="turns" id="turns">
+      <div class="empty" id="empty">问点什么吧。文档解析完成后，回答里会带来源页码；资料里有图就一起返回。</div>
+    </div>
+    <div class="composer">
+      <div class="chips">
+        <span class="chip">这份文档讲了什么？</span>
+        <span class="chip">表格里有什么内容？</span>
+        <span class="chip">文中的公式是什么意思？</span>
+      </div>
+      <div class="row">
+        <textarea id="q" rows="1" placeholder="输入问题，Enter 发送，Shift+Enter 换行"></textarea>
+        <button class="send" id="send">发送</button>
+      </div>
+      <div class="tools">
+        <label for="img">＋ 图片提问</label>
+        <input type="file" id="img" accept="image/*" hidden />
+        <span class="thumb" id="thumb"></span>
+        <span class="hint" id="hint">模型不支持视觉时，图片会先转成文字描述再检索</span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const API = '/api/mmrag';
+const state = { docs: new Map(), session: localStorage.getItem('mmrag-session') || '', busy: false };
+
+/* ---------- 文档列表 ---------- */
+const STATUS_TEXT = { pending: '待解析', parsing: '解析中', done: '解析完成', failed: '失败' };
+
+function renderDocs() {
+  const box = document.getElementById('docs');
+  if (!state.docs.size) { box.innerHTML = '<div class="hint" style="margin-top:8px">还没有文档</div>'; return; }
+  const items = [...state.docs.values()].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  box.innerHTML = items.map((d) => `
+    <div class="doc">
+      <div class="name">${esc(d.filename)}</div>
+      <div class="meta">
+        <span class="badge ${d.status}">${STATUS_TEXT[d.status] || d.status}</span>
+        <span>${d.pages ? d.pages + ' 页' : ''}</span>
+        ${d.status === 'failed' ? '<button class="retry" data-retry="' + d.id + '">重试</button>' : ''}
+      </div>
+      ${d.error ? `<div class="err">${esc(d.error)}</div>` : ''}
+    </div>`).join('');
+  box.querySelectorAll('[data-retry]').forEach((btn) => {
+    btn.onclick = () => reparse(btn.dataset.retry);
+  });
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+async function loadDocs() {
+  const res = await fetch(`${API}/docs`);
+  const list = await res.json();
+  state.docs = new Map(list.map((d) => [d.id, d]));
+  renderDocs();
+}
+
+async function reparse(id) {
+  const res = await fetch(`${API}/docs/${id}/reparse`, { method: 'POST' });
+  if (!res.ok) alert('重投失败：' + (await res.text()));
+  loadDocs();
+}
+
+/* ---------- 上传 ---------- */
+async function upload(files) {
+  for (const file of files) {
+    const form = new FormData();
+    form.append('files', file);
+    const res = await fetch(`${API}/docs/upload`, { method: 'POST', body: form });
+    if (!res.ok) { alert(`${file.name} 上传失败：` + (await res.text())); continue; }
+    for (const doc of await res.json()) state.docs.set(doc.id, doc);
+    renderDocs();
+  }
+}
+
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('file');
+drop.onclick = () => fileInput.click();
+fileInput.onchange = () => { upload([...fileInput.files]); fileInput.value = ''; };
+['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('hot'); }));
+['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('hot'); }));
+drop.addEventListener('drop', (e) => {
+  const files = [...e.dataTransfer.files].filter((f) => f.name.toLowerCase().endsWith('.pdf'));
+  if (files.length) upload(files);
+});
+
+/* ---------- SSE：状态实时推送 ---------- */
+function connectEvents() {
+  const es = new EventSource(`${API}/docs/events`);
+  es.addEventListener('status', (e) => {
+    const msg = JSON.parse(e.data);
+    const known = state.docs.get(msg.doc_id);
+    state.docs.set(msg.doc_id, { ...(known || { id: msg.doc_id, filename: msg.doc_id }), ...msg });
+    renderDocs();
+    // 新文档或终态：拉一次列表，补上文件名和页数（status 事件不带这些）
+    if (!known || msg.status === 'done' || msg.status === 'failed') loadDocs();
+  });
+  es.onerror = () => { /* 浏览器会自动重连，这里不打扰用户 */ };
+}
+connectEvents();
+loadDocs();
+
+/* ---------- 问答 ---------- */
+const turns = document.getElementById('turns');
+const ta = document.getElementById('q');
+const sendBtn = document.getElementById('send');
+const imgInput = document.getElementById('img');
+let pickedImage = null;
+
+document.querySelectorAll('.chip').forEach((chip) => {
+  chip.onclick = () => { ta.value = chip.textContent; ta.focus(); };
+});
+
+imgInput.onchange = () => {
+  pickedImage = imgInput.files[0] || null;
+  document.getElementById('thumb').textContent = pickedImage ? `已选 ${pickedImage.name}` : '';
+};
+
+ta.addEventListener('input', () => {
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 140) + 'px';
+});
+ta.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+sendBtn.onclick = send;
+
+function addTurn(role, html) {
+  document.getElementById('empty')?.remove();
+  const el = document.createElement('div');
+  el.className = `turn ${role}`;
+  el.innerHTML = `<div class="avatar">${role === 'user' ? '你' : 'R'}</div><div class="bubble">${html}</div>`;
+  turns.appendChild(el);
+  turns.scrollTop = turns.scrollHeight;
+  return el.querySelector('.bubble');
+}
+
+/** 极简 markdown：段落、代码块、表格、图片、引用角标。够用就行，不引第三方库。 */
+function render(text, citations, images) {
+  const parts = text.split(/```/);
+  let html = parts.map((chunk, i) => {
+    if (i % 2) return `<pre>${esc(chunk.replace(/^\w*\n/, ''))}</pre>`;
+    return chunk.split(/\n{2,}/).map(block => {
+      const lines = block.split('\n').filter(Boolean);
+      if (lines.length >= 2 && lines[0].trim().startsWith('|')) return table(lines);
+      return `<p>${inline(block)}</p>`;
+    }).join('');
+  }).join('');
+
+  for (const img of images || []) {
+    html += `<img src="${esc(img.url)}" alt="${esc(img.caption || '')}" loading="lazy" />`;
+    if (img.caption) html += `<p class="hint">${esc(img.caption)}</p>`;
+  }
+  return html;
+}
+
+function table(lines) {
+  const rows = lines.filter((l) => !/^\s*\|?[\s:|-]+\|?\s*$/.test(l));
+  return '<table>' + rows.map((row, i) => {
+    const cells = row.replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+    const tag = i === 0 ? 'th' : 'td';
+    return '<tr>' + cells.map((c) => `<${tag}>${inline(c)}</${tag}>`).join('') + '</tr>';
+  }).join('') + '</table>';
+}
+
+function inline(text) {
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\[来源\s*(\d+)(?:\s*[·・]\s*第?\s*(\d+)\s*页?)?\]/g, (m, i, p) =>
+      `<span class="cite">来源 ${i}${p ? ' · 第 ' + p + ' 页' : ''}</span>`);
+}
+
+async function send() {
+  const text = ta.value.trim();
+  if (!text || state.busy) return;
+  state.busy = true;
+  sendBtn.disabled = true;
+  ta.value = '';
+  ta.style.height = 'auto';
+
+  addTurn('user', `<p>${esc(text)}</p>` + (pickedImage ? `<p class="hint">＋ 图片：${esc(pickedImage.name)}</p>` : ''));
+  const bubble = addTurn('assistant', '<p class="hint">正在检索…</p>');
+
+  const form = new FormData();
+  form.append('question', text);
+  form.append('session_id', state.session);
+  if (pickedImage) form.append('image', pickedImage);
+  pickedImage = null;
+  imgInput.value = '';
+  document.getElementById('thumb').textContent = '';
+
+  let answer = '', citations = [], images = [], frames = 0;
+  try {
+    const res = await fetch(`${API}/chat/stream`, { method: 'POST', body: form });
+    if (!res.ok || !res.body) throw new Error(await res.text());
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut;
+      while ((cut = buffer.indexOf('\n\n')) >= 0) {
+        const frame = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const event = (frame.match(/^event: (.+)$/m) || [])[1];
+        const data = (frame.match(/^data: (.+)$/m) || [])[1];
+        if (!event || !data) continue;
+        frames += 1;
+        const payload = JSON.parse(data);
+        if (event === 'start') {
+          state.session = payload.session_id;
+          localStorage.setItem('mmrag-session', state.session);
+          bubble.innerHTML = '<p class="hint">检索完成，正在生成…</p>';
+        } else if (event === 'meta') {
+          citations = payload.citations || [];
+        } else if (event === 'delta') {
+          answer += payload.text;
+          bubble.innerHTML = render(answer, citations, []);
+          turns.scrollTop = turns.scrollHeight;
+        } else if (event === 'done') {
+          images = (payload.blocks || []).filter((b) => b.type === 'image');
+          bubble.innerHTML = render(answer, citations, images);
+        } else if (event === 'error') {
+          bubble.innerHTML = `<p class="err">出错：${esc(payload.detail || payload)}</p>`;
+        }
+      }
+    }
+    if (!answer && frames < 3) bubble.innerHTML = '<p class="err">没有拿到回答</p>';
+  } catch (err) {
+    bubble.innerHTML = `<p class="err">请求失败：${esc(err.message)}</p>`;
+  } finally {
+    state.busy = false;
+    sendBtn.disabled = false;
+    turns.scrollTop = turns.scrollHeight;
+  }
+}
+
+/* ---------- 历史 ---------- */
+(async function loadHistory() {
+  if (!state.session) return;
+  const res = await fetch(`${API}/sessions/${encodeURIComponent(state.session)}/messages`);
+  if (!res.ok) return;
+  const list = await res.json();
+  if (!list.length) return;
+  document.getElementById('empty')?.remove();
+  for (const msg of list) {
+    if (msg.role === 'user') addTurn('user', `<p>${esc(msg.text)}</p>`);
+    else addTurn('assistant', render(msg.text, [], (msg.blocks || []).filter((b) => b.type === 'image')));
+  }
+})();
+</script>
+</body>
+</html>
