@@ -46,6 +46,10 @@ def _tracked_or_staged(staged: bool) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows 控制台默认 GBK，打中文报告会 UnicodeEncodeError（在 hook 里表现为崩溃）
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description="扫描提交内容里的机密")
     parser.add_argument("--staged", action="store_true", help="只扫暂存区")
     args = parser.parse_args(argv)
