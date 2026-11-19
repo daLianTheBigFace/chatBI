@@ -1,0 +1,81 @@
+# 情感陪伴（sense）一套：redis + api + 两个 worker
+#
+# 用法（在 deploy/ 目录里）：
+#   cp prod.env.example prod.env && vi prod.env     # 填 key 和 redis 密码
+#   docker compose up -d --build
+#   docker compose logs -f api
+#
+# 停：docker compose down        （加 -v 连 redis 数据一起删）
+
+services:
+  redis:
+    # 必须是 7.x：我们用的 XAUTOCLAIM 要 Redis >= 6.2，之前 6.0.16 上直接报
+    # unknown command 'XAUTOCLAIM'
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --requirepass
+      - ${REDIS_PASSWORD:?prod.env 里必须设 REDIS_PASSWORD}
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    image: ${SENSE_IMAGE:-sense-api:0.1}
+    build:
+      context: ..
+      dockerfile: Dockerfile.sense
+    command: ["python", "-m", "chatbi.sense", "api"]
+    env_file: ./prod.env
+    environment:
+      # 容器里的 127.0.0.1 是它自己，这里必须换成 compose 的服务名
+      REDIS_HOST: redis
+      SENSE_PORT: "8800"
+    ports:
+      - "127.0.0.1:8800:8800"   # 只绑回环，公网访问交给 nginx
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  sense:
+    image: ${SENSE_IMAGE:-sense-api:0.1}
+    command: ["python", "-m", "chatbi.sense", "sense"]
+    env_file: ./prod.env
+    environment:
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  reply:
+    image: ${SENSE_IMAGE:-sense-api:0.1}
+    command: ["python", "-m", "chatbi.sense", "reply"]
+    env_file: ./prod.env
+    environment:
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data        # 会话库要写，必须和 api 看到同一份
+    restart: unless-stopped
+
+volumes:
+  redis-data:

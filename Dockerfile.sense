@@ -1,0 +1,62 @@
+# 情感陪伴（sense）服务镜像
+#
+# 一个镜像跑三个角色，靠 CMD 区分：
+#   api     HTTP + SSE           python -m chatbi.sense api
+#   sense   情感识别 worker      python -m chatbi.sense sense
+#   reply   回应生成 worker      python -m chatbi.sense reply
+#
+# 构建（在仓库根目录）：
+#   docker build -f Dockerfile.sense -t sense-api:0.1 .
+#
+# 只装了 sense 真正用到的依赖：没装 streamlit / pandas / kafka-python，
+# 也没装 torch（那是 mmrag 向量化那条线的事）。
+
+FROM python:3.12-slim
+
+# 国内构建时走清华源；海外直接 --build-arg PIP_INDEX_URL=https://pypi.org/simple
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/app/src \
+    SENSE_PORT=8800 \
+    TZ=Asia/Shanghai
+
+WORKDIR /app
+
+# 依赖单独一层：改代码不会重装依赖
+RUN pip config set global.index-url "$PIP_INDEX_URL" \
+ && pip install --no-cache-dir \
+        "fastapi>=0.115,<1" \
+        "uvicorn>=0.30,<1" \
+        "pydantic>=2.12,<3" \
+        "python-dotenv>=1.2.4" \
+        "httpx>=0.28,<1" \
+        "redis>=8.1.0" \
+        "openai>=3.0,<4" \
+        "openai-agents>=0.24.0" \
+        "langgraph>=1.0,<2" \
+        "langchain-core>=1.0,<2" \
+        "langchain-openai>=1.7,<2" \
+        "langgraph-checkpoint-sqlite>=3,<4"
+
+# 只拷源码；.dockerignore 已经挡掉 .env / data / .venv / tmp*
+COPY src ./src
+
+# 非 root 跑；data/sense 放会话库与 checkpoint
+RUN useradd --create-home --uid 10001 sense \
+ && mkdir -p /app/data/sense \
+ && chown -R sense:sense /app
+
+USER sense
+
+EXPOSE 8800
+
+# 容器内的 127.0.0.1 是它自己，健康检查走本机回环
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request,sys; \
+sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8800/api/sense/sessions', timeout=3).status == 200 else 1)"
+
+CMD ["python", "-m", "chatbi.sense", "api"]
